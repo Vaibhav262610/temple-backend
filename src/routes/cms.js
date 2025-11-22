@@ -214,4 +214,124 @@ router.delete('/images/:id', async (req, res) => {
     }
 });
 
+// =============================================
+// CONTACT FORM ROUTES
+// =============================================
+
+// GET all contact submissions
+router.get('/contact', async (req, res) => {
+    try {
+        const { status, is_read } = req.query;
+        let query = supabaseService.client
+            .from('cms_contact')
+            .select('*')
+            .order('created_at', { ascending: false });
+
+        if (status) {
+            query = query.eq('status', status);
+        }
+        if (is_read !== undefined) {
+            query = query.eq('is_read', is_read === 'true');
+        }
+
+        const { data, error } = await query;
+
+        if (error) throw error;
+        res.json({ success: true, data: data || [] });
+    } catch (error) {
+        console.error('Error fetching contact submissions:', error);
+        res.status(500).json({ success: false, message: error.message });
+    }
+});
+
+// GET single contact submission
+router.get('/contact/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { data, error } = await supabaseService.client
+            .from('cms_contact')
+            .select('*')
+            .eq('id', id)
+            .single();
+
+        if (error) throw error;
+        res.json({ success: true, data });
+    } catch (error) {
+        console.error('Error fetching contact submission:', error);
+        res.status(500).json({ success: false, message: error.message });
+    }
+});
+
+// POST create contact submission (public endpoint for website)
+router.post('/contact', async (req, res) => {
+    try {
+        const { data, error } = await supabaseService.client
+            .from('cms_contact')
+            .insert(req.body)
+            .select('*')
+            .single();
+
+        if (error) throw error;
+        res.status(201).json({ success: true, data, message: 'Contact form submitted successfully' });
+    } catch (error) {
+        console.error('Error creating contact submission:', error);
+        res.status(500).json({ success: false, message: error.message });
+    }
+});
+
+// PUT update contact submission (mark as read, add notes, etc.)
+router.put('/contact/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { data, error } = await supabaseService.client
+            .from('cms_contact')
+            .update(req.body)
+            .eq('id', id)
+            .select('*')
+            .single();
+
+        if (error) throw error;
+        res.json({ success: true, data, message: 'Contact submission updated successfully' });
+    } catch (error) {
+        console.error('Error updating contact submission:', error);
+        res.status(500).json({ success: false, message: error.message });
+    }
+});
+
+// DELETE contact submission
+router.delete('/contact/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { error } = await supabaseService.client
+            .from('cms_contact')
+            .delete()
+            .eq('id', id);
+
+        if (error) throw error;
+        res.json({ success: true, message: 'Contact submission deleted successfully' });
+    } catch (error) {
+        console.error('Error deleting contact submission:', error);
+        res.status(500).json({ success: false, message: error.message });
+    }
+});
+
+// PATCH mark as read
+router.patch('/contact/:id/read', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { data, error } = await supabaseService.client
+            .from('cms_contact')
+            .update({ is_read: true, status: 'read' })
+            .eq('id', id)
+            .select('*')
+            .single();
+
+        if (error) throw error;
+        res.json({ success: true, data, message: 'Marked as read' });
+    } catch (error) {
+        console.error('Error marking as read:', error);
+        res.status(500).json({ success: false, message: error.message });
+    }
+});
+
 module.exports = router;
