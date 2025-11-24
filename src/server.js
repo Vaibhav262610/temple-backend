@@ -8,6 +8,7 @@ const morgan = require('morgan');
 
 // Import routes
 const userRoutes = require('./routes/users');
+const adminRoutes = require('./routes/admin');
 const communityRoutes = require('./routes/communities');
 const communityFeaturesRoutes = require('./routes/communityFeatures');
 const applicationRoutes = require('./routes/applications');
@@ -84,6 +85,7 @@ app.get('/health', (req, res) => {
 
 // API Routes
 app.use('/api/users', userRoutes);
+app.use('/api/admin', adminRoutes);
 app.use('/api/communities', communityRoutes); // Basic community CRUD
 app.use('/api/communities', communityFeaturesRoutes); // Members, Applications, Tasks
 app.use('/api', applicationRoutes); // Standalone application routes

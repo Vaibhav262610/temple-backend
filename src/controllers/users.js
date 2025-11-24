@@ -27,7 +27,8 @@ const registerUser = async (req, res) => {
       emergency_contact,
       date_of_birth,
       auth_provider,
-      role
+      role,
+      status
     } = req.body;
 
     // Check if user already exists
@@ -54,7 +55,8 @@ const registerUser = async (req, res) => {
       emergency_contact,
       date_of_birth,
       auth_provider: auth_provider || 'local',
-      role: role || 'user'
+      role: role || 'user',
+      status: status || 'active'
     });
 
     // Generate JWT token
@@ -72,7 +74,8 @@ const registerUser = async (req, res) => {
           id: user.id,
           email: user.email,
           full_name: user.full_name,
-          role: user.role || 'user'
+          role: user.role || 'user',
+          status: user.status || 'active'
         },
         token
       }

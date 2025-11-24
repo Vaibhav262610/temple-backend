@@ -58,8 +58,8 @@ const adminRegistrationValidation = [
     .isLength({ min: 1, max: 100 })
     .withMessage('Full name must be between 1 and 100 characters'),
   body('role')
-    .isIn(['chairman', 'board'])
-    .withMessage('Role must be either chairman or board')
+    .isIn(['chairman', 'board', 'community_owner'])
+    .withMessage('Role must be either chairman, board, or community_owner')
 ];
 
 // Routes
