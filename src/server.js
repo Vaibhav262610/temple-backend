@@ -29,6 +29,7 @@ const communicationRoutes = require('./routes/communications');
 const donationsRoutes = require('./routes/donations');
 const expensesRoutes = require('./routes/expenses');
 const cmsRoutes = require('./routes/cms');
+const galleryRoutes = require('./routes/gallery');
 
 // Import Supabase-backed models
 require('./models/User');
@@ -108,6 +109,7 @@ app.use('/api/communications', communicationRoutes);
 app.use('/api/donations', donationsRoutes);
 app.use('/api/expenses', expensesRoutes);
 app.use('/api/cms', cmsRoutes);
+app.use('/api/cms/gallery', galleryRoutes);
 
 // Temporary schema check endpoint (remove in production)
 // app.use('/api/debug', require('../check-schema-endpoint'));
