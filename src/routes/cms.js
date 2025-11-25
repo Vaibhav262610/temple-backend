@@ -140,7 +140,7 @@ router.delete('/about/:id', async (req, res) => {
 });
 
 // =============================================
-// IMAGES ROUTES (multiple images by name: puja, gallery, broadcast)
+// IMAGES ROUTES (multiple images by name: puja, gallery, broadcast, banner)
 // =============================================
 
 // GET images by name
@@ -157,6 +157,33 @@ router.get('/images/:name', async (req, res) => {
         res.json({ success: true, data: data || [] });
     } catch (error) {
         console.error('Error fetching images:', error);
+        res.status(500).json({ success: false, message: error.message });
+    }
+});
+
+// PUBLIC ENDPOINT: Get active banner image for main website
+router.get('/public/banner', async (req, res) => {
+    try {
+        const { data, error } = await supabaseService.client
+            .from('cms_images')
+            .select('*')
+            .eq('name', 'banner')
+            .eq('is_active', true)
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .single();
+
+        if (error) {
+            // If no banner found, return empty response
+            if (error.code === 'PGRST116') {
+                return res.json({ success: true, data: null });
+            }
+            throw error;
+        }
+
+        res.json({ success: true, data });
+    } catch (error) {
+        console.error('Error fetching public banner:', error);
         res.status(500).json({ success: false, message: error.message });
     }
 });
