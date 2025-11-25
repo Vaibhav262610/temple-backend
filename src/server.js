@@ -57,6 +57,7 @@ app.use(cors({
     'http://localhost:5173',
     'http://localhost:3000',
     'http://localhost:4173',
+    'https://temple-management-cms.vercel.app',
     'https://temple-management-woad.vercel.app',
     'https://temple-management-woad.vercel.app/',
   ],
