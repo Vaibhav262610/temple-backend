@@ -75,21 +75,52 @@ router.post('/upload', upload.single('image'), async (req, res) => {
         console.log('🔗 Public URL:', publicUrl);
 
         // Save metadata to database
-        const { data: dbData, error: dbError } = await supabase
-            .from('cms_images')
-            .insert({
-                name: name,
-                image_url: publicUrl,
-                title: title,
-                description: description || null,
-                storage_path: fileName,
-                is_active: true
-            })
-            .select()
-            .single();
+        // Try with service role client first, fallback to regular client
+        let dbData, dbError;
+
+        try {
+            // Create a service role client for this operation
+            const serviceClient = createClient(
+                process.env.SUPABASE_URL,
+                process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_ANON_KEY,
+                {
+                    auth: {
+                        persistSession: false,
+                        autoRefreshToken: false
+                    }
+                }
+            );
+
+            const result = await serviceClient
+                .from('cms_images')
+                .insert({
+                    name: name,
+                    image_url: publicUrl,
+                    title: title,
+                    description: description || null,
+                    storage_path: fileName,
+                    is_active: true
+                })
+                .select()
+                .single();
+
+            dbData = result.data;
+            dbError = result.error;
+        } catch (error) {
+            dbError = error;
+        }
 
         if (dbError) {
             console.error('❌ Database error:', dbError);
+            console.error('   Error details:', JSON.stringify(dbError, null, 2));
+
+            // If RLS error, provide helpful message
+            if (dbError.message && dbError.message.includes('row-level security')) {
+                console.error('\n⚠️  RLS POLICY ERROR DETECTED!');
+                console.error('   Run this SQL in Supabase Dashboard:');
+                console.error('   ALTER TABLE cms_images DISABLE ROW LEVEL SECURITY;\n');
+            }
+
             // Try to delete uploaded file if database insert fails
             await supabase.storage.from('gallery-images').remove([fileName]);
             throw dbError;

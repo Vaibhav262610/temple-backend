@@ -3,6 +3,7 @@ const express = require('express');
 const router = express.Router();
 const Community = require('../models/Community');
 const HybridCommunityService = require('../services/hybridCommunityService');
+const supabaseService = require('../services/supabaseService');
 const mongoose = require('mongoose');
 
 // GET all communities
@@ -163,12 +164,12 @@ router.put('/:id', async (req, res) => {
   }
 });
 
-// DELETE (archive) community
+// DELETE community permanently
 router.delete('/:id', async (req, res) => {
   try {
-    console.log('🗑️ Archiving community:', req.params.id);
+    console.log('🗑️ Permanently deleting community:', req.params.id);
 
-    // Use hybrid service to archive in Supabase + memory
+    // Use hybrid service to delete from Supabase + memory
     const community = await HybridCommunityService.deleteCommunity(req.params.id);
 
     if (!community) {
@@ -181,13 +182,13 @@ router.delete('/:id', async (req, res) => {
     res.json({
       success: true,
       data: community,
-      message: 'Community archived successfully'
+      message: 'Community deleted successfully'
     });
   } catch (error) {
-    console.error('Error archiving community:', error);
+    console.error('Error deleting community:', error);
     res.status(500).json({
       success: false,
-      message: 'Failed to archive community',
+      message: 'Failed to delete community',
       error: error.message
     });
   }
@@ -225,70 +226,21 @@ router.get('/:id/stats', async (req, res) => {
 // MEMBER MANAGEMENT ROUTES
 // ============================================
 
-// Members route moved to communityFeatures.js to avoid conflicts
+const {
+  getCommunityMembers,
+  addMember,
+  updateMember,
+  updateMemberRole,
+  removeMember
+} = require('../controllers/community/memberController');
 
-// POST add member
-router.post('/:id/members', async (req, res) => {
-  try {
-    const { user_id, role = 'member' } = req.body;
+console.log('🔧 communities.js: Registering member routes');
 
-    // Update member count
-    await Community.findByIdAndUpdate(req.params.id, {
-      $inc: { member_count: 1 }
-    });
+router.get('/:id/members', getCommunityMembers);
+router.post('/:id/members', addMember);
+router.put('/:id/members/:memberId', updateMember);
+router.delete('/:id/members/:memberId', removeMember);
 
-    res.json({
-      success: true,
-      message: 'Member added successfully',
-      data: { community_id: req.params.id, user_id, role }
-    });
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: 'Failed to add member',
-      error: error.message
-    });
-  }
-});
-
-// PUT update member role
-router.put('/:id/members/:user_id', async (req, res) => {
-  try {
-    const { role } = req.body;
-
-    res.json({
-      success: true,
-      message: 'Member role updated successfully',
-      data: { community_id: req.params.id, user_id: req.params.user_id, role }
-    });
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: 'Failed to update member',
-      error: error.message
-    });
-  }
-});
-
-// DELETE remove member
-router.delete('/:id/members/:user_id', async (req, res) => {
-  try {
-    // Update member count
-    await Community.findByIdAndUpdate(req.params.id, {
-      $inc: { member_count: -1 }
-    });
-
-    res.json({
-      success: true,
-      message: 'Member removed successfully'
-    });
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: 'Failed to remove member',
-      error: error.message
-    });
-  }
-});
+console.log('✅ communities.js: Member routes registered');
 
 module.exports = router;

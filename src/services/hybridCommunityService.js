@@ -157,20 +157,20 @@ class HybridCommunityService {
       console.log('✅ Community removed from memory:', id);
     }
 
-    // Attempt to delete from Supabase (or mark as archived)
+    // Permanently delete from Supabase database
     try {
       const { data, error } = await supabaseService.client
         .from('communities')
-        .update({ status: 'archived', updated_at: new Date().toISOString() })
+        .delete()
         .eq('id', String(id))
         .select('*')
         .single();
 
       if (!error && data) {
-        console.log('✅ Community archived in Supabase:', data.id);
+        console.log('✅ Community permanently deleted from Supabase:', data.id);
         return { ...data, _id: data.id };
       } else {
-        console.log('⚠️ Supabase archive failed (memory removed):', error?.message);
+        console.log('⚠️ Supabase delete failed (memory removed):', error?.message);
       }
     } catch (error) {
       console.log('⚠️ Supabase connection failed (memory removed):', error.message);

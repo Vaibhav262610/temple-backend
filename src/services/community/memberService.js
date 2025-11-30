@@ -3,42 +3,68 @@ const ActivityLogger = require('../../utils/activityLogger');
 
 class MemberService {
   // Add member to community
-  async addMember(communityId, userId, role = 'member', addedBy) {
-    // Check if member already exists
-    const { data: existing } = await supabaseService.client
-      .from('community_members')
-      .select('*')
-      .eq('community_id', communityId)
-      .eq('user_id', userId)
-      .single();
+  async addMember(communityId, userId, role = 'member', addedBy, memberInfo = {}) {
+    // Check if member already exists by user_id or email
+    let existing = null;
+    if (userId) {
+      const { data } = await supabaseService.client
+        .from('community_members')
+        .select('*')
+        .eq('community_id', communityId)
+        .eq('user_id', userId)
+        .single();
+      existing = data;
+    } else if (memberInfo.email) {
+      const { data } = await supabaseService.client
+        .from('community_members')
+        .select('*')
+        .eq('community_id', communityId)
+        .eq('email', memberInfo.email)
+        .single();
+      existing = data;
+    }
 
     if (existing) {
       throw new Error('User is already a member of this community');
     }
 
+    // Prepare member data
+    const memberData = {
+      community_id: communityId,
+      user_id: userId || null,
+      role: role,
+      status: 'active',
+      joined_at: new Date().toISOString(),
+      full_name: memberInfo.name || memberInfo.full_name || null,
+      email: memberInfo.email || null,
+      phone: memberInfo.phone || null
+    };
+
+    console.log('💾 Inserting member data:', memberData);
+
     const { data, error } = await supabaseService.client
       .from('community_members')
-      .insert([{
-        community_id: communityId,
-        user_id: userId,
-        role: role,
-        status: 'active',
-        joined_at: new Date().toISOString()
-      }])
+      .insert([memberData])
       .select(`
         *,
         user:users(id, full_name, email, avatar_url, phone)
       `)
       .single();
 
-    if (error) throw error;
+    if (error) {
+      console.error('❌ Insert error:', error);
+      throw error;
+    }
+
+    console.log('✅ Insert result:', data);
 
     // Log activity
+    const memberName = data.full_name || data.user?.full_name || 'member';
     await ActivityLogger.logCommunityActivity(
       communityId,
       addedBy,
       'member_added',
-      `Added ${data.user.full_name} as ${role}`,
+      `Added ${memberName} as ${role}`,
       { member_id: userId, role }
     );
 
@@ -46,44 +72,49 @@ class MemberService {
   }
 
   // Remove member from community
-  async removeMember(communityId, userId, removedBy) {
+  async removeMember(communityId, memberId, removedBy) {
     // Get member info before deletion
-    const { data: member } = await supabase
+    const { data: member } = await supabaseService.client
       .from('community_members')
-      .select('user:users(full_name)')
+      .select('*, user:users(full_name)')
+      .eq('id', memberId)
       .eq('community_id', communityId)
-      .eq('user_id', userId)
       .single();
 
-    const { data, error } = await supabase
+    if (!member) {
+      throw new Error('Member not found');
+    }
+
+    const { data, error } = await supabaseService.client
       .from('community_members')
       .delete()
+      .eq('id', memberId)
       .eq('community_id', communityId)
-      .eq('user_id', userId)
       .select()
       .single();
 
     if (error) throw error;
 
     // Log activity
+    const memberName = member.full_name || member.user?.full_name || 'member';
     await ActivityLogger.logCommunityActivity(
       communityId,
       removedBy,
       'member_removed',
-      `Removed ${member?.user?.full_name || 'member'} from community`,
-      { member_id: userId }
+      `Removed ${memberName} from community`,
+      { member_id: memberId }
     );
 
     return data;
   }
 
   // Update member role
-  async updateMemberRole(communityId, userId, newRole, updatedBy) {
-    const { data, error } = await supabase
+  async updateMemberRole(communityId, memberId, newRole, updatedBy) {
+    const { data, error } = await supabaseService.client
       .from('community_members')
       .update({ role: newRole })
+      .eq('id', memberId)
       .eq('community_id', communityId)
-      .eq('user_id', userId)
       .select(`
         *,
         user:users(id, full_name, email, avatar_url)
@@ -93,24 +124,62 @@ class MemberService {
     if (error) throw error;
 
     // Log activity
+    const memberName = data.full_name || data.user?.full_name || 'member';
     await ActivityLogger.logCommunityActivity(
       communityId,
       updatedBy,
       'member_role_updated',
-      `Updated ${data.user.full_name}'s role to ${newRole}`,
-      { member_id: userId, new_role: newRole }
+      `Updated ${memberName}'s role to ${newRole}`,
+      { member_id: memberId, new_role: newRole }
+    );
+
+    return data;
+  }
+
+  // Update member info (name, email, phone)
+  async updateMember(communityId, memberId, updateData, updatedBy) {
+    const allowedFields = ['full_name', 'email', 'phone', 'role', 'status'];
+    const filteredData = {};
+
+    Object.keys(updateData).forEach(key => {
+      if (allowedFields.includes(key) && updateData[key] !== undefined) {
+        filteredData[key] = updateData[key];
+      }
+    });
+
+    const { data, error } = await supabaseService.client
+      .from('community_members')
+      .update(filteredData)
+      .eq('id', memberId)
+      .eq('community_id', communityId)
+      .select(`
+        *,
+        user:users(id, full_name, email, avatar_url)
+      `)
+      .single();
+
+    if (error) throw error;
+
+    // Log activity
+    const memberName = data.full_name || data.user?.full_name || 'member';
+    await ActivityLogger.logCommunityActivity(
+      communityId,
+      updatedBy,
+      'member_updated',
+      `Updated ${memberName}'s information`,
+      { member_id: memberId, updated_fields: Object.keys(filteredData) }
     );
 
     return data;
   }
 
   // Update member status
-  async updateMemberStatus(communityId, userId, newStatus, updatedBy) {
-    const { data, error } = await supabase
+  async updateMemberStatus(communityId, memberId, newStatus, updatedBy) {
+    const { data, error } = await supabaseService.client
       .from('community_members')
       .update({ status: newStatus })
+      .eq('id', memberId)
       .eq('community_id', communityId)
-      .eq('user_id', userId)
       .select(`
         *,
         user:users(id, full_name, email, avatar_url)
@@ -120,12 +189,13 @@ class MemberService {
     if (error) throw error;
 
     // Log activity
+    const memberName = data.full_name || data.user?.full_name || 'member';
     await ActivityLogger.logCommunityActivity(
       communityId,
       updatedBy,
       'member_status_updated',
-      `Updated ${data.user.full_name}'s status to ${newStatus}`,
-      { member_id: userId, new_status: newStatus }
+      `Updated ${memberName}'s status to ${newStatus}`,
+      { member_id: memberId, new_status: newStatus }
     );
 
     return data;
@@ -151,15 +221,24 @@ class MemberService {
     const { data, error } = await query;
     if (error) throw error;
 
+    // Merge user data with member data (prefer member table data)
+    const members = data.map(member => ({
+      ...member,
+      full_name: member.full_name || member.user?.full_name || 'Unknown Member',
+      email: member.email || member.user?.email || '',
+      phone: member.phone || member.user?.phone || '',
+      avatar_url: member.user?.avatar_url || null
+    }));
+
     // Filter by search if provided
-    if (search && data) {
-      return data.filter(member =>
-        member.user.full_name.toLowerCase().includes(search.toLowerCase()) ||
-        member.user.email.toLowerCase().includes(search.toLowerCase())
+    if (search && members) {
+      return members.filter(member =>
+        member.full_name.toLowerCase().includes(search.toLowerCase()) ||
+        member.email.toLowerCase().includes(search.toLowerCase())
       );
     }
 
-    return data;
+    return members;
   }
 
   // Get member details

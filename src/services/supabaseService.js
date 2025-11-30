@@ -7,11 +7,17 @@ class SupabaseService {
     const serviceKey = process.env.SUPABASE_SERVICE_KEY;
     const anonKey = process.env.SUPABASE_ANON_KEY;
 
-    // For now, always use anon key to avoid authentication issues
-    this.useServiceKey = false;
-    this.supabaseKey = anonKey;
+    // Check if service key is valid (different from anon key)
+    const hasValidServiceKey = serviceKey && serviceKey !== anonKey && serviceKey.length > 100;
 
-    console.log('🔑 Supabase Service initialized with:', this.useServiceKey ? 'SERVICE_ROLE' : 'ANON', 'key');
+    // Use service key only if it's valid, otherwise use anon key
+    this.useServiceKey = hasValidServiceKey;
+    this.supabaseKey = hasValidServiceKey ? serviceKey : anonKey;
+
+    console.log('🔑 Supabase Service initialized');
+    console.log('   - Service key same as anon?', serviceKey === anonKey);
+    console.log('   - Has valid service key?', hasValidServiceKey);
+    console.log('   - Using:', this.useServiceKey ? 'SERVICE_ROLE' : 'ANON');
 
     this.client = createClient(
       process.env.SUPABASE_URL,

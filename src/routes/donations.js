@@ -67,7 +67,7 @@ router.post('/', async (req, res) => {
     console.log('💰 Creating donation:', req.body);
 
     // Validate required fields
-    const { amount, donation_type = 'general', payment_method = 'cash' } = req.body;
+    const { amount } = req.body;
 
     if (!amount || amount <= 0) {
       return res.status(400).json({
@@ -76,13 +76,13 @@ router.post('/', async (req, res) => {
       });
     }
 
-    // Prepare donation data
+    // Prepare donation data - only use fields that exist in the table
     const donationData = {
-      ...req.body,
+      name: req.body.name || req.body.donor_name || null,
+      email: req.body.email || req.body.donor_email || null,
+      phone: req.body.phone || req.body.donor_phone || null,
       amount: parseFloat(amount),
-      donation_date: req.body.donation_date || new Date().toISOString().split('T')[0],
-      payment_status: req.body.payment_status || 'completed',
-      created_by: req.body.created_by || 'system'
+      message: req.body.message || req.body.notes || req.body.purpose || null
     };
 
     const { data, error } = await supabaseService.client
@@ -92,11 +92,6 @@ router.post('/', async (req, res) => {
       .single();
 
     if (error) throw error;
-
-    // Update category collected amount if donation type matches
-    if (data.donation_type && data.payment_status === 'completed') {
-      await updateCategoryCollectedAmount(data.donation_type);
-    }
 
     res.status(201).json({
       success: true,
@@ -240,31 +235,36 @@ router.get('/reports/summary', async (req, res) => {
   try {
     console.log('📊 Fetching donations summary...');
 
-    // Get total donations
+    // Get all donations (no status field, all are considered completed)
     const { data: donations, error: donationsError } = await supabaseService.client
       .from('donations')
-      .select('amount, payment_status, donation_date, donation_type')
-      .eq('payment_status', 'completed');
+      .select('amount, created_at');
 
     if (donationsError) throw donationsError;
 
     // Calculate summary
-    const totalAmount = donations.reduce((sum, d) => sum + parseFloat(d.amount), 0);
+    const totalAmount = donations.reduce((sum, d) => sum + parseFloat(d.amount || 0), 0);
     const totalCount = donations.length;
     const averageAmount = totalCount > 0 ? totalAmount / totalCount : 0;
 
     // Get this month's donations
     const currentMonth = new Date().toISOString().slice(0, 7); // YYYY-MM
     const thisMonthDonations = donations.filter(d =>
-      d.donation_date && d.donation_date.startsWith(currentMonth)
+      d.created_at && d.created_at.startsWith(currentMonth)
     );
-    const thisMonthAmount = thisMonthDonations.reduce((sum, d) => sum + parseFloat(d.amount), 0);
+    const thisMonthAmount = thisMonthDonations.reduce((sum, d) => sum + parseFloat(d.amount || 0), 0);
 
-    // Get donation types breakdown
-    const typeBreakdown = {};
-    donations.forEach(d => {
-      typeBreakdown[d.donation_type] = (typeBreakdown[d.donation_type] || 0) + parseFloat(d.amount);
-    });
+    // Group by month for trends
+    const monthlyData = donations.reduce((acc, d) => {
+      const date = new Date(d.created_at);
+      const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+      if (!acc[monthKey]) {
+        acc[monthKey] = { amount: 0, count: 0 };
+      }
+      acc[monthKey].amount += parseFloat(d.amount || 0);
+      acc[monthKey].count += 1;
+      return acc;
+    }, {});
 
     res.json({
       success: true,
@@ -274,7 +274,15 @@ router.get('/reports/summary', async (req, res) => {
         averageAmount,
         thisMonthAmount,
         thisMonthCount: thisMonthDonations.length,
-        typeBreakdown
+        statusCounts: {
+          completed: totalCount,
+          pending: 0,
+          failed: 0
+        },
+        monthlyData: Object.entries(monthlyData).map(([month, data]) => ({
+          month,
+          ...data
+        })).sort((a, b) => a.month.localeCompare(b.month))
       }
     });
   } catch (error) {

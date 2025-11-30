@@ -1,7 +1,11 @@
+console.log('🔧🔧🔧 LOADING communityRoutes.js FILE 🔧🔧🔧');
+
 const express = require('express');
 const router = express.Router();
 const authMiddleware = require('../middleware/authMiddleware');
 const { allowRoles, PERMISSIONS } = require('../middleware/rbacMiddleware');
+
+console.log('🔧 communityRoutes.js: Imports loaded successfully');
 
 // Import controllers
 const {
@@ -18,6 +22,7 @@ const {
 const {
   getCommunityMembers,
   addMember,
+  updateMember,
   updateMemberRole,
   removeMember
 } = require('../controllers/community/memberController');
@@ -33,6 +38,8 @@ const {
 // ✅ Apply auth middleware to all routes
 router.use(authMiddleware);
 
+console.log('🔧 Community Routes: Registering member routes...');
+
 // ========================
 // COMMUNITY CRUD ROUTES
 // ========================
@@ -45,8 +52,22 @@ router.delete('/:id', allowRoles(PERMISSIONS.CAN_MANAGE_COMMUNITY), deleteCommun
 // ========================
 // COMMUNITY MEMBERS ROUTES
 // ========================
-router.get('/:id/members', getCommunityMembers);
-router.post('/:id/members', allowRoles(PERMISSIONS.CAN_MANAGE_COMMUNITY), addMember);
+console.log('🔧 Registering: GET /:id/members');
+router.get('/:id/members', (req, res, next) => {
+  console.log('✅ GET /:id/members route HIT!', req.params.id);
+  next();
+}, getCommunityMembers);
+
+console.log('🔧 Registering: POST /:id/members');
+router.post('/:id/members', (req, res, next) => {
+  console.log('✅ POST /:id/members route HIT!', req.params.id);
+  next();
+}, allowRoles(PERMISSIONS.CAN_MANAGE_COMMUNITY), addMember);
+router.put('/:id/members/:memberId', allowRoles(PERMISSIONS.CAN_MANAGE_COMMUNITY), updateMember);
+router.patch('/:id/members/:memberId/role', allowRoles(PERMISSIONS.CAN_MANAGE_COMMUNITY), updateMemberRole);
+router.delete('/:id/members/:memberId', allowRoles(PERMISSIONS.CAN_MANAGE_COMMUNITY), removeMember);
+
+// Legacy routes for backward compatibility
 router.put('/:id/members/:userId', allowRoles(PERMISSIONS.CAN_MANAGE_COMMUNITY), updateMemberRole);
 router.delete('/:id/members/:userId', allowRoles(PERMISSIONS.CAN_MANAGE_COMMUNITY), removeMember);
 

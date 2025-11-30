@@ -868,26 +868,15 @@ router.put('/applications/:id/approve', async (req, res) => {
         // Create volunteer record from approved application
         console.log('👥 Creating volunteer record from approved application...');
 
+        // Match the actual volunteers table schema: id, name, email, phone, created_at
         const volunteerData = {
-            community_id: application.community_id,
-            first_name: application.first_name,
-            last_name: application.last_name,
+            name: `${application.first_name} ${application.last_name}`.trim(),
             email: application.email,
-            phone: application.phone,
-            skills: application.skills || [],
-            interests: application.interests || [],
-            status: 'active',
-            total_hours_volunteered: 0,
-            notes: `Approved from application: ${application.motivation || application.experience || 'Application approved'}`,
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString()
+            phone: application.phone || null,
+            created_at: new Date().toISOString()
         };
 
-        // TODO: Add these fields after running database migration to add columns:
-        // date_of_birth: application.date_of_birth || null,
-        // address: application.address || {},
-        // emergency_contact: application.emergency_contact || {},
-        // availability: application.availability || {},
+        console.log('📝 Volunteer data to insert:', volunteerData);
 
         const { data: volunteer, error: volunteerError } = await supabaseService.client
             .from('volunteers')

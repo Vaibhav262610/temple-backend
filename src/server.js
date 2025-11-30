@@ -1,5 +1,5 @@
 // Main Server File - Supabase Backend
-require('dotenv').config({ path: require('path').join(__dirname, '../../.env') }); // Load .env from root directory
+require('dotenv').config({ path: require('path').join(__dirname, '../.env') }); // Load .env from temple-backend directory
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
@@ -18,6 +18,8 @@ const debugRoutes = require('./routes/debug');
 // const donationRoutes = require('./routes/donations'); // Temporarily disabled - MongoDB not connected
 // const expenseRoutes = require('./routes/expenses'); // Temporarily disabled - MongoDB not connected
 const eventRoutes = require('./routes/events');
+const eventsWithUploadRoutes = require('./routes/eventsWithUpload');
+const publicEventsRoutes = require('./routes/publicEvents');
 const taskRoutes = require('./routes/tasks');
 const volunteerRoutes = require('./routes/volunteers-simple');
 const broadcastRoutes = require('./routes/broadcasts');
@@ -96,7 +98,9 @@ app.use('/api', applicationRoutes); // Standalone application routes
 app.use('/api', frontendCompatibleRoutes); // Frontend-compatible routes
 app.use('/api', reportsRoutes); // Reports and calendar routes
 app.use('/api', debugRoutes); // Debug routes for troubleshooting
-app.use('/api', eventRoutes); // Events management routes
+app.use('/api/events', eventsWithUploadRoutes); // Events with image upload (must be before legacy)
+// app.use('/api', eventRoutes); // Events management routes (legacy - disabled in favor of eventsWithUpload)
+app.use('/api/public/events', publicEventsRoutes); // Public events for website
 app.use('/api', taskRoutes); // Tasks management routes
 // app.use('/api/donations', donationRoutes); // Temporarily disabled - MongoDB not connected
 // app.use('/api/expenses', expenseRoutes); // Temporarily disabled - MongoDB not connected

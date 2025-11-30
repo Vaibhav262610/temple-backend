@@ -3,8 +3,18 @@ const ApiResponse = require('../../utils/response');
 
 const addMember = async (req, res, next) => {
   try {
-    const { user_id, role } = req.body;
-    const member = await memberService.addMember(req.params.id, user_id, role || 'member', req.user?.id || 'system');
+    const { user_id, role, name, email, phone, full_name } = req.body;
+    console.log('🔍 addMember received:', { user_id, role, name, email, phone, full_name });
+    const memberInfo = { name: name || full_name, email, phone };
+    console.log('📦 memberInfo:', memberInfo);
+    const member = await memberService.addMember(
+      req.params.id,
+      user_id,
+      role || 'member',
+      req.user?.id || 'system',
+      memberInfo
+    );
+    console.log('✅ Member created:', member);
     return ApiResponse.success(res, member, 'Member added successfully', 201);
   } catch (error) {
     next(error);
@@ -13,7 +23,9 @@ const addMember = async (req, res, next) => {
 
 const removeMember = async (req, res, next) => {
   try {
-    await memberService.removeMember(req.params.id, req.params.userId, req.user?.id || 'system');
+    // Support both userId (old) and memberId (new) parameters
+    const memberId = req.params.memberId || req.params.userId;
+    await memberService.removeMember(req.params.id, memberId, req.user?.id || 'system');
     return ApiResponse.success(res, null, 'Member removed successfully');
   } catch (error) {
     next(error);
@@ -23,8 +35,27 @@ const removeMember = async (req, res, next) => {
 const updateMemberRole = async (req, res, next) => {
   try {
     const { role } = req.body;
-    const member = await memberService.updateMemberRole(req.params.id, req.params.userId, role, req.user?.id || 'system');
+    // Support both userId (old) and memberId (new) parameters
+    const memberId = req.params.memberId || req.params.userId;
+    const member = await memberService.updateMemberRole(req.params.id, memberId, role, req.user?.id || 'system');
     return ApiResponse.success(res, member, 'Member role updated successfully');
+  } catch (error) {
+    next(error);
+  }
+};
+
+const updateMember = async (req, res, next) => {
+  try {
+    const { full_name, email, phone, role, status } = req.body;
+    // Support both userId (old) and memberId (new) parameters
+    const memberId = req.params.memberId || req.params.userId;
+    const member = await memberService.updateMember(
+      req.params.id,
+      memberId,
+      { full_name, email, phone, role, status },
+      req.user?.id || 'system'
+    );
+    return ApiResponse.success(res, member, 'Member updated successfully');
   } catch (error) {
     next(error);
   }
@@ -33,7 +64,9 @@ const updateMemberRole = async (req, res, next) => {
 const updateMemberStatus = async (req, res, next) => {
   try {
     const { status } = req.body;
-    const member = await memberService.updateMemberStatus(req.params.id, req.params.userId, status, req.user?.id || 'system');
+    // Support both userId (old) and memberId (new) parameters
+    const memberId = req.params.memberId || req.params.userId;
+    const member = await memberService.updateMemberStatus(req.params.id, memberId, status, req.user?.id || 'system');
     return ApiResponse.success(res, member, 'Member status updated successfully');
   } catch (error) {
     next(error);
@@ -71,6 +104,7 @@ const importMembers = async (req, res, next) => {
 module.exports = {
   addMember,
   removeMember,
+  updateMember,
   updateMemberRole,
   updateMemberStatus,
   getCommunityMembers,

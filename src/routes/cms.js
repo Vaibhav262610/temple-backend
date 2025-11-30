@@ -147,13 +147,33 @@ router.delete('/about/:id', async (req, res) => {
 router.get('/images/:name', async (req, res) => {
     try {
         const { name } = req.params;
-        const { data, error } = await supabaseService.client
+
+        let query = supabaseService.client
             .from('cms_images')
-            .select('*')
-            .eq('name', name)
-            .order('created_at', { ascending: false });
+            .select('*');
+
+        // If requesting 'banner', get all banner slots (banner-1, banner-2, banner-3, banner-4)
+        if (name === 'banner') {
+            query = query.or('name.eq.banner-1,name.eq.banner-2,name.eq.banner-3,name.eq.banner-4');
+        } else {
+            query = query.eq('name', name);
+        }
+
+        query = query.order('name', { ascending: true });
+
+        const { data, error } = await query;
 
         if (error) throw error;
+
+        // Sort banner slots in order
+        if (name === 'banner' && data) {
+            data.sort((a, b) => {
+                const aNum = parseInt(a.name.split('-')[1] || '0');
+                const bNum = parseInt(b.name.split('-')[1] || '0');
+                return aNum - bNum;
+            });
+        }
+
         res.json({ success: true, data: data || [] });
     } catch (error) {
         console.error('Error fetching images:', error);
@@ -184,6 +204,42 @@ router.get('/public/banner', async (req, res) => {
         res.json({ success: true, data });
     } catch (error) {
         console.error('Error fetching public banner:', error);
+        res.status(500).json({ success: false, message: error.message });
+    }
+});
+
+// PUBLIC ENDPOINT: Get ALL active banners for carousel
+router.get('/public/banners', async (req, res) => {
+    try {
+        console.log('📸 Fetching all active banners for carousel');
+
+        const { data, error } = await supabaseService.client
+            .from('cms_images')
+            .select('*')
+            .or('name.eq.banner-1,name.eq.banner-2,name.eq.banner-3,name.eq.banner-4')
+            .eq('is_active', true)
+            .order('name', { ascending: true });
+
+        if (error) throw error;
+
+        // Sort by banner number
+        if (data) {
+            data.sort((a, b) => {
+                const aNum = parseInt(a.name.split('-')[1] || '0');
+                const bNum = parseInt(b.name.split('-')[1] || '0');
+                return aNum - bNum;
+            });
+        }
+
+        console.log(`✅ Found ${data?.length || 0} active banners`);
+
+        res.json({
+            success: true,
+            data: data || [],
+            count: data?.length || 0
+        });
+    } catch (error) {
+        console.error('❌ Error fetching public banners:', error);
         res.status(500).json({ success: false, message: error.message });
     }
 });
@@ -362,3 +418,92 @@ router.patch('/contact/:id/read', async (req, res) => {
 });
 
 module.exports = router;
+
+
+// =============================================
+// ABOUT MANDIR ROUTES
+// =============================================
+router.get('/about-mandir', async (req, res) => {
+    try {
+        const { data, error } = await supabaseService.client
+            .from('about_mandir')
+            .select('*')
+            .order('created_at', { ascending: false });
+
+        if (error) throw error;
+        res.json({ success: true, data: data || [] });
+    } catch (error) {
+        console.error('Error fetching about mandir:', error);
+        res.status(500).json({ success: false, message: error.message });
+    }
+});
+
+router.post('/about-mandir', async (req, res) => {
+    try {
+        const { data, error } = await supabaseService.client
+            .from('about_mandir')
+            .insert({
+                ...req.body,
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString()
+            })
+            .select('*')
+            .single();
+
+        if (error) throw error;
+        res.status(201).json({ success: true, data, message: 'About Mandir created successfully' });
+    } catch (error) {
+        console.error('Error creating about mandir:', error);
+        res.status(500).json({ success: false, message: error.message });
+    }
+});
+
+router.put('/about-mandir/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        console.log('Updating about_mandir:', id, req.body);
+
+        const { data, error } = await supabaseService.client
+            .from('about_mandir')
+            .update({
+                ...req.body,
+                updated_at: new Date().toISOString()
+            })
+            .eq('id', id)
+            .select('*');
+
+        if (error) {
+            console.error('Supabase error:', error);
+            throw error;
+        }
+
+        if (!data || data.length === 0) {
+            return res.status(404).json({
+                success: false,
+                message: 'About Mandir record not found'
+            });
+        }
+
+        console.log('Update successful:', data[0]);
+        res.json({ success: true, data: data[0], message: 'About Mandir updated successfully' });
+    } catch (error) {
+        console.error('Error updating about mandir:', error);
+        res.status(500).json({ success: false, message: error.message });
+    }
+});
+
+router.delete('/about-mandir/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { error } = await supabaseService.client
+            .from('about_mandir')
+            .delete()
+            .eq('id', id);
+
+        if (error) throw error;
+        res.json({ success: true, message: 'About Mandir deleted successfully' });
+    } catch (error) {
+        console.error('Error deleting about mandir:', error);
+        res.status(500).json({ success: false, message: error.message });
+    }
+});
