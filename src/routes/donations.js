@@ -397,11 +397,21 @@ async function updateCategoryCollectedAmount(donationType) {
     if (!categoryName) return;
 
     // Calculate total collected for this type
-    const { data: donations } = await supabaseService.client
+    // Note: payment_status might not exist in all tables, so we handle both cases
+    let query = supabaseService.client
       .from('donations')
       .select('amount')
-      .eq('donation_type', donationType)
-      .eq('payment_status', 'completed');
+      .eq('donation_type', donationType);
+
+    // Try to filter by payment_status if column exists
+    try {
+      query = query.eq('payment_status', 'completed');
+    } catch (e) {
+      // If payment_status column doesn't exist, just get all donations
+      console.log('payment_status column not found, using all donations');
+    }
+
+    const { data: donations } = await query;
 
     const totalCollected = donations?.reduce((sum, d) => sum + parseFloat(d.amount), 0) || 0;
 

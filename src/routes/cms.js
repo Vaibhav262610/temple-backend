@@ -417,9 +417,6 @@ router.patch('/contact/:id/read', async (req, res) => {
     }
 });
 
-module.exports = router;
-
-
 // =============================================
 // ABOUT MANDIR ROUTES
 // =============================================
@@ -507,3 +504,5 @@ router.delete('/about-mandir/:id', async (req, res) => {
         res.status(500).json({ success: false, message: error.message });
     }
 });
+
+module.exports = router;

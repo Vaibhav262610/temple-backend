@@ -136,28 +136,32 @@ router.get('/:id', async (req, res) => {
 // POST create event with optional image
 router.post('/', upload.single('image'), async (req, res) => {
     try {
-        console.log('📅 Creating event:', req.body);
+        console.log('📅 Creating event - Full request body:', req.body);
         console.log('📷 Image file:', req.file ? 'Yes' : 'No');
 
-        const {
-            title,
-            description,
-            location,
-            starts_at,
-            ends_at,
-            visibility = 'public',
-            status = 'published',
-            capacity,
-            registration_required = false,
-            community_id,
-            timezone = 'Asia/Kolkata'
-        } = req.body;
+        // Extract fields from request body
+        // Note: FormData sends everything as strings, so we need to handle that
+        const title = req.body.title;
+        const description = req.body.description || '';
+        const location = req.body.location || '';
+        const starts_at = req.body.starts_at || req.body.startDate;
+        const ends_at = req.body.ends_at || req.body.endDate;
+        const visibility = req.body.visibility || 'public';
+        const status = req.body.status || 'published';
+        const capacity = req.body.capacity ? parseInt(req.body.capacity) : null;
+        const registration_required = req.body.registration_required === 'true' || req.body.registrationRequired === 'true';
+        const community_id = req.body.community_id || req.body.communityId || null;
+        const timezone = req.body.timezone || 'Asia/Kolkata';
+
+        console.log('📅 Parsed fields:', { title, starts_at, ends_at, description, location });
 
         // Validate required fields
         if (!title || !starts_at || !ends_at) {
+            console.error('❌ Missing required fields:', { title: !!title, starts_at: !!starts_at, ends_at: !!ends_at });
             return res.status(400).json({
                 success: false,
-                message: 'Missing required fields: title, starts_at, ends_at'
+                message: 'Missing required fields: title, starts_at, ends_at',
+                received: { title, starts_at, ends_at }
             });
         }
 
