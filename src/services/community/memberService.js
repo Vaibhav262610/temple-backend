@@ -2,6 +2,103 @@ const supabaseService = require('../supabaseService');
 const ActivityLogger = require('../../utils/activityLogger');
 
 class MemberService {
+  // Send welcome email to new community member
+  async sendMemberWelcomeEmail(memberEmail, memberName, communityName, role) {
+    try {
+      const emailService = require('../emailService-sendgrid');
+      const frontendUrl = process.env.VITE_FRONTEND_URL || 'https://temple-management-woad.vercel.app';
+
+      const emailHtml = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <style>
+            body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; background: #f5f5f5; }
+            .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+            .header { background: linear-gradient(135deg, #10b981 0%, #059669 100%); color: white; padding: 30px; text-align: center; border-radius: 10px 10px 0 0; }
+            .header h1 { margin: 0; font-size: 24px; }
+            .content { background: white; padding: 30px; border-radius: 0 0 10px 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+            .welcome-box { background: #ecfdf5; border: 2px solid #10b981; padding: 20px; border-radius: 8px; margin: 20px 0; text-align: center; }
+            .welcome-box h2 { color: #059669; margin-top: 0; }
+            .info-item { background: #f0fdf4; padding: 12px 15px; margin: 10px 0; border-radius: 5px; border-left: 4px solid #10b981; }
+            .button { display: inline-block; padding: 14px 35px; background: #10b981; color: white; text-decoration: none; border-radius: 8px; margin: 20px 0; font-weight: bold; }
+            .button:hover { background: #059669; }
+            .role-badge { display: inline-block; background: #10b981; color: white; padding: 5px 15px; border-radius: 20px; font-size: 12px; text-transform: uppercase; }
+            .footer { text-align: center; margin-top: 30px; color: #666; font-size: 12px; }
+            .features { background: #f9fafb; padding: 20px; border-radius: 8px; margin: 20px 0; }
+            .features ul { margin: 0; padding-left: 20px; }
+            .features li { margin: 8px 0; }
+          </style>
+        </head>
+        <body>
+          <div class="container">
+            <div class="header">
+              <h1>🎉 Welcome to the Community!</h1>
+              <p style="margin: 10px 0 0 0; opacity: 0.9;">You've been added as a member</p>
+            </div>
+            <div class="content">
+              <div class="welcome-box">
+                <h2>Hello ${memberName}!</h2>
+                <p>You have been added to <strong>${communityName}</strong></p>
+              </div>
+              
+              <div class="info-item">
+                <strong>🏛️ Community:</strong> ${communityName}
+              </div>
+              
+              <div class="info-item">
+                <strong>👤 Your Role:</strong> <span class="role-badge">${role}</span>
+              </div>
+              
+              <div class="info-item">
+                <strong>📧 Your Email:</strong> ${memberEmail}
+              </div>
+              
+              <div class="features">
+                <h3 style="margin-top: 0;">🌟 What you can do:</h3>
+                <ul>
+                  <li>View community events and activities</li>
+                  <li>Participate in community discussions</li>
+                  <li>Access community resources</li>
+                  <li>Connect with other members</li>
+                  <li>Stay updated with announcements</li>
+                </ul>
+              </div>
+              
+              <center>
+                <a href="${frontendUrl}/communities" class="button">
+                  View Your Community →
+                </a>
+              </center>
+              
+              <p style="color: #666; font-size: 14px; margin-top: 30px;">
+                If you have any questions, please contact the community administrator.
+              </p>
+            </div>
+            <div class="footer">
+              <p>© ${new Date().getFullYear()} Temple Management System. All rights reserved.</p>
+              <p>This is an automated email. Please do not reply to this message.</p>
+            </div>
+          </div>
+        </body>
+        </html>
+      `;
+
+      await emailService.sendEmail({
+        from: `${process.env.EMAIL_FROM_NAME || 'Temple Admin'} <${process.env.EMAIL_FROM || 'noreply@temple.com'}>`,
+        to: memberEmail,
+        subject: `🎉 Welcome to ${communityName}!`,
+        html: emailHtml
+      });
+
+      console.log('✅ Welcome email sent to new member:', memberEmail);
+      return true;
+    } catch (emailError) {
+      console.error('⚠️ Failed to send member welcome email:', emailError.message);
+      return false;
+    }
+  }
+
   // Add member to community
   async addMember(communityId, userId, role = 'member', addedBy, memberInfo = {}) {
     // Check if member already exists by user_id or email
@@ -26,6 +123,21 @@ class MemberService {
 
     if (existing) {
       throw new Error('User is already a member of this community');
+    }
+
+    // Get community name for email
+    let communityName = 'the community';
+    try {
+      const { data: community } = await supabaseService.client
+        .from('communities')
+        .select('name')
+        .eq('id', communityId)
+        .single();
+      if (community) {
+        communityName = community.name;
+      }
+    } catch (e) {
+      console.log('Could not fetch community name:', e.message);
     }
 
     // Prepare member data
@@ -58,8 +170,14 @@ class MemberService {
 
     console.log('✅ Insert result:', data);
 
+    // Send welcome email to new member
+    const memberEmail = data.email || data.user?.email;
+    const memberName = data.full_name || data.user?.full_name || 'Member';
+    if (memberEmail) {
+      await this.sendMemberWelcomeEmail(memberEmail, memberName, communityName, role);
+    }
+
     // Log activity
-    const memberName = data.full_name || data.user?.full_name || 'member';
     await ActivityLogger.logCommunityActivity(
       communityId,
       addedBy,
