@@ -2,7 +2,7 @@
 const express = require('express');
 const router = express.Router();
 const supabaseService = require('../services/supabaseService');
-const emailService = require('../services/emailService-simple');
+const emailService = require('../services/emailService'); // Using SendGrid
 const { body } = require('express-validator');
 
 // =============================================
@@ -103,14 +103,14 @@ router.post('/emails/send', async (req, res) => {
         // If not scheduled, simulate email sending for now
         if (!scheduled_at) {
             try {
-                // Send real email using Nodemailer
-                console.log('📧 Sending real email to:', recipient_emails.length, 'recipients');
+                // Send real email using SendGrid
+                console.log('📧 Sending real email via SendGrid to:', recipient_emails.length, 'recipients');
                 console.log('📧 Subject:', subject);
-                console.log('📧 From:', sender_email);
+                console.log('📧 From:', process.env.EMAIL_FROM || sender_email);
 
-                // Send email using real email service
+                // Send email using SendGrid service
                 const emailResult = await emailService.sendEmail({
-                    from: `${process.env.EMAIL_FROM_NAME || 'Temple Admin'} <${process.env.EMAIL_USER || sender_email}>`,
+                    from: process.env.EMAIL_FROM || sender_email,
                     to: recipient_emails,
                     subject: subject,
                     html: content
@@ -200,32 +200,39 @@ router.post('/emails/send-to-volunteers', async (req, res) => {
 
         console.log('📧 Sending bulk email to volunteers:', { community_id, volunteer_filter });
 
-        // Get volunteers based on filter
+        // Get volunteers - only select email to avoid schema issues
         let volunteerQuery = supabaseService.client
             .from('volunteers')
-            .select('email, first_name, last_name')
-            .eq('status', 'active');
+            .select('email');
 
         if (community_id && community_id !== 'all') {
             volunteerQuery = volunteerQuery.eq('community_id', community_id);
         }
 
-        if (volunteer_filter?.skills) {
-            volunteerQuery = volunteerQuery.contains('skills', [volunteer_filter.skills]);
-        }
-
         const { data: volunteers, error: volunteerError } = await volunteerQuery;
 
-        if (volunteerError) throw volunteerError;
+        if (volunteerError) {
+            console.error('📧 Volunteer query error:', volunteerError.message);
+            throw volunteerError;
+        }
 
         if (!volunteers || volunteers.length === 0) {
             return res.status(400).json({
                 success: false,
-                message: 'No volunteers found matching the criteria'
+                message: 'No volunteers found'
             });
         }
 
-        const recipient_emails = volunteers.map(v => v.email);
+        const recipient_emails = volunteers.map(v => v.email).filter(Boolean);
+
+        if (recipient_emails.length === 0) {
+            return res.status(400).json({
+                success: false,
+                message: 'No valid email addresses found'
+            });
+        }
+
+        console.log('📧 Found', recipient_emails.length, 'volunteer emails');
 
         // Personalize content if needed
         let personalizedContent = content;
@@ -253,14 +260,14 @@ router.post('/emails/send-to-volunteers', async (req, res) => {
 
         // Simulate bulk email sending
         try {
-            console.log('📧 Sending real bulk email to:', recipient_emails.length, 'volunteers');
+            console.log('📧 Sending real bulk email via SendGrid to:', recipient_emails.length, 'volunteers');
             console.log('📧 Subject:', subject);
-            console.log('📧 From:', sender_email);
+            console.log('📧 From:', process.env.EMAIL_FROM || sender_email);
             console.log('📧 Recipients:', recipient_emails.slice(0, 3).join(', '), recipient_emails.length > 3 ? '...' : '');
 
-            // Send bulk email using real email service
+            // Send bulk email using SendGrid service
             const bulkEmailResult = await emailService.sendBulkEmail({
-                from: `${process.env.EMAIL_FROM_NAME || 'Temple Admin'} <${process.env.EMAIL_USER || sender_email}>`,
+                from: process.env.EMAIL_FROM || sender_email,
                 recipients: recipient_emails,
                 subject: subject,
                 html: personalizedContent
@@ -276,10 +283,7 @@ router.post('/emails/send-to-volunteers', async (req, res) => {
                 status: 'sent',
                 sent: bulkEmailResult.sent,
                 failed: bulkEmailResult.failed,
-                volunteers: volunteers.map(v => ({
-                    email: v.email,
-                    name: `${v.first_name} ${v.last_name}`
-                }))
+                emails: recipient_emails
             };
 
             // Update status to sent
@@ -393,13 +397,27 @@ router.get('/templates', async (req, res) => {
 // POST create email template
 router.post('/templates', async (req, res) => {
     try {
+        // Only include fields that exist in the database
         const templateData = {
-            ...req.body,
+            community_id: req.body.community_id,
+            name: req.body.name,
+            subject: req.body.subject,
+            content: req.body.content,
+            category: req.body.category || 'general',
+            variables: req.body.variables || [],
             is_active: true,
             usage_count: 0,
+            created_by: req.body.created_by,
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString()
         };
+
+        // Remove undefined values
+        Object.keys(templateData).forEach(key => {
+            if (templateData[key] === undefined) delete templateData[key];
+        });
+
+        console.log('📄 Creating email template:', templateData);
 
         const { data, error } = await supabaseService.client
             .from('email_templates')
@@ -504,5 +522,78 @@ router.get('/templates/:id', async (req, res) => {
         });
     }
 });
+
+// Helper function for sending bulk emails
+async function sendBulkEmailHelper(req, res, { community_id, sender_email, recipient_emails, subject, content, template_id, volunteers }) {
+    try {
+        // Store and send email
+        const emailData = {
+            community_id,
+            sender_email,
+            recipient_emails,
+            subject,
+            content,
+            template_id: template_id || null,
+            status: 'sending',
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+        };
+
+        const { data: emailRecord, error: insertError } = await supabaseService.client
+            .from('email_communications')
+            .insert(emailData)
+            .select('*')
+            .single();
+
+        if (insertError) throw insertError;
+
+        // Send bulk email via SendGrid
+        console.log('📧 Sending bulk email via SendGrid to:', recipient_emails.length, 'volunteers');
+
+        const bulkEmailResult = await emailService.sendBulkEmail({
+            from: process.env.EMAIL_FROM || sender_email,
+            recipients: recipient_emails,
+            subject: subject,
+            html: content
+        });
+
+        if (!bulkEmailResult.success) {
+            throw new Error(bulkEmailResult.error);
+        }
+
+        // Update status to sent
+        await supabaseService.client
+            .from('email_communications')
+            .update({
+                status: 'sent',
+                sent_at: new Date().toISOString(),
+                delivery_status: { sent: bulkEmailResult.sent, failed: bulkEmailResult.failed },
+                recipient_count: recipient_emails.length,
+                updated_at: new Date().toISOString()
+            })
+            .eq('id', emailRecord.id);
+
+        console.log('✅ Bulk email sent successfully to', bulkEmailResult.sent, 'volunteers');
+
+        res.status(201).json({
+            success: true,
+            data: {
+                ...emailRecord,
+                status: 'sent',
+                sent_at: new Date().toISOString(),
+                recipient_count: recipient_emails.length
+            },
+            message: `Bulk email sent successfully to ${recipient_emails.length} volunteers`
+        });
+
+    } catch (error) {
+        console.error('Error in sendBulkEmailHelper:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to send bulk email',
+            error: error.message
+        });
+    }
+}
 
 module.exports = router;

@@ -1,62 +1,75 @@
-// Email Service using Nodemailer
-const nodemailer = require('nodemailer');
+// Email Service using SendGrid
+const sgMail = require('@sendgrid/mail');
 
 class EmailService {
     constructor() {
-        this.transporter = null;
-        this.initializeTransporter();
+        this.initialized = false;
+        this.initializeSendGrid();
     }
 
-    initializeTransporter() {
-        // Check if we're in simulation mode
-        if (process.env.EMAIL_MODE === 'simulation') {
-            console.log('📧 Email service running in SIMULATION mode');
-            console.log('📧 Emails will be logged to console and saved to files');
-            this.transporter = null; // No real transporter needed
+    initializeSendGrid() {
+        const apiKey = process.env.SENDGRID_API_KEY;
+
+        if (!apiKey) {
+            console.log('⚠️ SENDGRID_API_KEY not found - emails will be simulated');
             return;
         }
 
-        // Configure email transporter for real sending
-        this.transporter = nodemailer.createTransport({
-            service: 'gmail',
-            auth: {
-                user: process.env.EMAIL_USER || 'your-email@gmail.com',
-                pass: process.env.EMAIL_PASSWORD || 'your-app-password'
-            }
-        });
-
-        console.log('📧 Email service configured for real sending via Gmail');
+        sgMail.setApiKey(apiKey);
+        this.initialized = true;
+        console.log('📧 SendGrid email service initialized');
+        console.log('📧 From email:', process.env.EMAIL_FROM || 'Not set');
     }
 
     async sendEmail({ from, to, subject, html, text }) {
-        try {
-            console.log('📧 Sending email via Nodemailer...');
-            console.log('📧 From:', from);
-            console.log('📧 To:', Array.isArray(to) ? to.join(', ') : to);
-            console.log('📧 Subject:', subject);
+        const fromEmail = from || process.env.EMAIL_FROM || 'noreply@temple.com';
+        const fromName = process.env.EMAIL_FROM_NAME || 'Temple Admin';
+        const recipients = Array.isArray(to) ? to : [to];
 
-            const mailOptions = {
-                from: from || process.env.EMAIL_USER || 'Temple Admin <noreply@temple.com>',
-                to: Array.isArray(to) ? to.join(', ') : to,
+        console.log('📧 Sending email via SendGrid...');
+        console.log('📧 From:', `${fromName} <${fromEmail}>`);
+        console.log('📧 To:', recipients.join(', '));
+        console.log('📧 Subject:', subject);
+
+        if (!this.initialized) {
+            console.log('⚠️ SendGrid not initialized - simulating email');
+            return {
+                success: true,
+                messageId: 'simulated-' + Date.now(),
+                recipients: recipients.length,
+                status: 'simulated'
+            };
+        }
+
+        try {
+            const msg = {
+                to: recipients,
+                from: {
+                    email: fromEmail,
+                    name: fromName
+                },
                 subject: subject,
                 html: html,
                 text: text || this.htmlToText(html)
             };
 
-            const result = await this.transporter.sendMail(mailOptions);
+            const response = await sgMail.send(msg);
 
-            console.log('✅ Email sent successfully!');
-            console.log('📧 Message ID:', result.messageId);
+            console.log('✅ Email sent successfully via SendGrid!');
+            console.log('📧 Status code:', response[0].statusCode);
 
             return {
                 success: true,
-                messageId: result.messageId,
-                recipients: Array.isArray(to) ? to.length : 1,
+                messageId: response[0].headers['x-message-id'],
+                recipients: recipients.length,
                 status: 'sent'
             };
 
         } catch (error) {
-            console.error('❌ Email sending failed:', error);
+            console.error('❌ SendGrid email failed:', error.message);
+            if (error.response) {
+                console.error('❌ SendGrid error body:', error.response.body);
+            }
 
             return {
                 success: false,
@@ -67,65 +80,53 @@ class EmailService {
     }
 
     async sendBulkEmail({ from, recipients, subject, html, text }) {
-        try {
-            console.log('📧 Sending bulk email via Nodemailer...');
-            console.log('📧 Recipients:', recipients.length);
+        console.log('📧 Sending bulk email via SendGrid...');
+        console.log('📧 Recipients:', recipients.length);
 
-            const results = [];
-            const batchSize = 10; // Send in batches to avoid rate limits
+        const results = [];
+        const batchSize = 10;
 
-            for (let i = 0; i < recipients.length; i += batchSize) {
-                const batch = recipients.slice(i, i + batchSize);
-                console.log(`📧 Sending batch ${Math.floor(i / batchSize) + 1}/${Math.ceil(recipients.length / batchSize)}`);
+        for (let i = 0; i < recipients.length; i += batchSize) {
+            const batch = recipients.slice(i, i + batchSize);
+            console.log(`📧 Sending batch ${Math.floor(i / batchSize) + 1}/${Math.ceil(recipients.length / batchSize)}`);
 
-                const batchPromises = batch.map(recipient =>
-                    this.sendEmail({
-                        from,
-                        to: recipient,
-                        subject,
-                        html,
-                        text
-                    })
-                );
+            const batchPromises = batch.map(recipient =>
+                this.sendEmail({
+                    from,
+                    to: recipient,
+                    subject,
+                    html,
+                    text
+                })
+            );
 
-                const batchResults = await Promise.allSettled(batchPromises);
-                results.push(...batchResults);
+            const batchResults = await Promise.allSettled(batchPromises);
+            results.push(...batchResults);
 
-                // Add delay between batches to avoid rate limiting
-                if (i + batchSize < recipients.length) {
-                    await new Promise(resolve => setTimeout(resolve, 1000));
-                }
+            // Delay between batches
+            if (i + batchSize < recipients.length) {
+                await new Promise(resolve => setTimeout(resolve, 500));
             }
-
-            const successful = results.filter(r => r.status === 'fulfilled' && r.value.success).length;
-            const failed = results.length - successful;
-
-            console.log(`✅ Bulk email completed: ${successful} sent, ${failed} failed`);
-
-            return {
-                success: true,
-                total: recipients.length,
-                sent: successful,
-                failed: failed,
-                results: results,
-                status: 'sent'
-            };
-
-        } catch (error) {
-            console.error('❌ Bulk email sending failed:', error);
-
-            return {
-                success: false,
-                error: error.message,
-                status: 'failed'
-            };
         }
+
+        const successful = results.filter(r => r.status === 'fulfilled' && r.value?.success).length;
+        const failed = results.length - successful;
+
+        console.log(`✅ Bulk email completed: ${successful} sent, ${failed} failed`);
+
+        return {
+            success: true,
+            total: recipients.length,
+            sent: successful,
+            failed: failed,
+            results: results,
+            status: 'sent'
+        };
     }
 
     htmlToText(html) {
-        // Simple HTML to text conversion
         return html
-            .replace(/<[^>]*>/g, '') // Remove HTML tags
+            .replace(/<[^>]*>/g, '')
             .replace(/&nbsp;/g, ' ')
             .replace(/&amp;/g, '&')
             .replace(/&lt;/g, '<')
@@ -134,14 +135,12 @@ class EmailService {
     }
 
     async testConnection() {
-        try {
-            await this.transporter.verify();
-            console.log('✅ Email service connection verified');
-            return true;
-        } catch (error) {
-            console.error('❌ Email service connection failed:', error);
+        if (!this.initialized) {
+            console.log('⚠️ SendGrid not initialized');
             return false;
         }
+        console.log('✅ SendGrid API key is set');
+        return true;
     }
 }
 

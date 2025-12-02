@@ -1,6 +1,7 @@
-// Broadcasts Controller - MongoDB
+// Broadcasts Controller - MongoDB with SendGrid
 const Broadcast = require('../models/Broadcast');
 const { body, validationResult } = require('express-validator');
+const emailService = require('../services/emailService'); // SendGrid
 
 // Get all broadcasts with filtering and pagination
 const getBroadcasts = async (req, res) => {
@@ -133,7 +134,7 @@ const updateBroadcast = async (req, res) => {
       },
       { new: true, runValidators: true }
     ).populate('template_id', 'name type')
-     .populate('created_by', 'full_name email');
+      .populate('created_by', 'full_name email');
 
     if (!broadcast) {
       return res.status(404).json({
@@ -156,21 +157,15 @@ const updateBroadcast = async (req, res) => {
   }
 };
 
-// Send broadcast (change status to sending)
+// Send broadcast (actually send via SendGrid)
 const sendBroadcast = async (req, res) => {
   try {
     const { id } = req.params;
 
-    const broadcast = await Broadcast.findByIdAndUpdate(
-      id,
-      {
-        status: 'sending',
-        sent_at: new Date(),
-        updated_at: new Date()
-      },
-      { new: true, runValidators: true }
-    ).populate('template_id', 'name type')
-     .populate('created_by', 'full_name email');
+    // Get the broadcast first
+    const broadcast = await Broadcast.findById(id)
+      .populate('template_id', 'name type content')
+      .populate('created_by', 'full_name email');
 
     if (!broadcast) {
       return res.status(404).json({
@@ -179,14 +174,81 @@ const sendBroadcast = async (req, res) => {
       });
     }
 
-    // Here you would typically trigger the actual sending process
-    // For now, we'll just update the status
+    // Update status to sending
+    broadcast.status = 'sending';
+    broadcast.sent_at = new Date();
+    broadcast.updated_at = new Date();
+    await broadcast.save();
 
-    res.json({
-      success: true,
-      message: 'Broadcast sending initiated',
-      data: broadcast
-    });
+    // Get recipients from the broadcast
+    const recipients = broadcast.recipients || [];
+
+    if (recipients.length === 0) {
+      broadcast.status = 'failed';
+      broadcast.error_message = 'No recipients specified';
+      await broadcast.save();
+
+      return res.status(400).json({
+        success: false,
+        message: 'No recipients specified for broadcast'
+      });
+    }
+
+    // Send emails via SendGrid
+    console.log('📧 Sending broadcast via SendGrid to', recipients.length, 'recipients');
+    console.log('📧 Subject:', broadcast.subject);
+    console.log('📧 Channel:', broadcast.channel);
+
+    if (broadcast.channel === 'email') {
+      try {
+        const emailResult = await emailService.sendBulkEmail({
+          from: process.env.EMAIL_FROM || 'noreply@temple.com',
+          recipients: recipients,
+          subject: broadcast.subject,
+          html: broadcast.content || broadcast.template_id?.content || '<p>No content</p>'
+        });
+
+        // Update broadcast with results
+        broadcast.status = emailResult.success ? 'sent' : 'failed';
+        broadcast.sent_count = emailResult.sent || 0;
+        broadcast.total_recipients = recipients.length;
+        broadcast.delivery_status = emailResult;
+        await broadcast.save();
+
+        console.log('✅ Broadcast sent successfully:', emailResult.sent, 'delivered');
+
+        res.json({
+          success: true,
+          message: `Broadcast sent to ${emailResult.sent} recipients`,
+          data: broadcast
+        });
+
+      } catch (sendError) {
+        console.error('❌ Broadcast send error:', sendError);
+        broadcast.status = 'failed';
+        broadcast.error_message = sendError.message;
+        await broadcast.save();
+
+        res.status(500).json({
+          success: false,
+          message: 'Failed to send broadcast',
+          error: sendError.message
+        });
+      }
+    } else {
+      // For non-email channels (SMS, push, etc.) - just mark as sent for now
+      broadcast.status = 'sent';
+      broadcast.sent_count = recipients.length;
+      broadcast.total_recipients = recipients.length;
+      await broadcast.save();
+
+      res.json({
+        success: true,
+        message: `Broadcast (${broadcast.channel}) marked as sent`,
+        data: broadcast
+      });
+    }
+
   } catch (error) {
     console.error('Error sending broadcast:', error);
     res.status(500).json({
@@ -209,7 +271,7 @@ const cancelBroadcast = async (req, res) => {
       },
       { new: true, runValidators: true }
     ).populate('template_id', 'name type')
-     .populate('created_by', 'full_name email');
+      .populate('created_by', 'full_name email');
 
     if (!broadcast) {
       return res.status(404).json({

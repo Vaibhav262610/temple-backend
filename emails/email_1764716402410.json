@@ -1,0 +1,11 @@
+{
+  "timestamp": "2025-12-02T23:00:02.410Z",
+  "from": "Temple Admin <admin@temple.com>",
+  "to": [
+    "bob@example.com"
+  ],
+  "subject": "Volunteer Shift Reminder - testing",
+  "html": "<h2>Volunteer Shift Reminder</h2><p>Dear {{name}},</p><p>This is a friendly reminder about your upcoming volunteer shift:</p><p><strong>Shift:</strong> {{shift_name}}<br><strong>Date:</strong> {{shift_date}}<br><strong>Time:</strong> {{shift_time}}</p>",
+  "text": "Volunteer Shift ReminderDear {{name}},This is a friendly reminder about your upcoming volunteer shift:Shift: {{shift_name}}Date: {{shift_date}}Time: {{shift_time}}",
+  "messageId": "sim_1764716402408_bbnqlro1a"
+}
