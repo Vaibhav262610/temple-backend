@@ -16,9 +16,6 @@ const applicationRoutes = require('./routes/applications');
 const frontendCompatibleRoutes = require('./routes/applications-frontend-compatible');
 const reportsRoutes = require('./routes/reports');
 const debugRoutes = require('./routes/debug');
-// const donationRoutes = require('./routes/donations'); // Temporarily disabled - MongoDB not connected
-// const expenseRoutes = require('./routes/expenses'); // Temporarily disabled - MongoDB not connected
-const eventRoutes = require('./routes/events');
 const eventsWithUploadRoutes = require('./routes/eventsWithUpload');
 const publicEventsRoutes = require('./routes/publicEvents');
 const taskRoutes = require('./routes/tasks');
@@ -87,35 +84,28 @@ const authLimiter = rateLimit({
 app.use('/api', generalLimiter);
 app.use('/api/users/login', authLimiter);
 app.use('/api/users/register', authLimiter);
-// CORS configuration - stricter in production
+// CORS configuration - allow both production and development origins
 const allowedOrigins = [
+  // Production
   'https://temple-management-cms.vercel.app',
   'https://temple-management-woad.vercel.app',
+  // Development (always allow for local testing against production API)
+  'http://localhost:8080',
+  'http://localhost:8081',
+  'http://localhost:5173',
+  'http://localhost:3000',
+  'http://localhost:4173',
 ];
-
-// Add localhost origins only in development
-if (process.env.NODE_ENV !== 'production') {
-  allowedOrigins.push(
-    'http://localhost:8080',
-    'http://localhost:8081',
-    'http://localhost:5173',
-    'http://localhost:3000',
-    'http://localhost:4173'
-  );
-}
 
 app.use(cors({
   origin: function (origin, callback) {
-    // In production, block requests with no origin (prevents curl/Postman abuse)
+    // Allow requests with no origin (mobile apps, Postman in dev)
     if (!origin) {
-      if (process.env.NODE_ENV === 'production') {
-        return callback(new Error('Direct API access not allowed'));
-      }
-      return callback(null, true); // Allow in development
+      return callback(null, true);
     }
 
-    // Allow all localhost origins in development only
-    if (process.env.NODE_ENV !== 'production' && (origin.includes('localhost') || origin.includes('127.0.0.1'))) {
+    // Allow localhost origins (for development)
+    if (origin.includes('localhost') || origin.includes('127.0.0.1')) {
       return callback(null, true);
     }
 
