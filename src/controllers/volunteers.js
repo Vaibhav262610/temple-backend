@@ -19,8 +19,12 @@ const getVolunteers = async (req, res) => {
       query.community_id = community_id;
     }
 
+    // Support both 'status' field and legacy 'background_check_status'
     if (status && status !== 'all') {
-      query.background_check_status = status;
+      query.$or = [
+        { status: status },
+        { background_check_status: status }
+      ];
     }
 
     if (skills && skills !== 'all') {
@@ -36,11 +40,29 @@ const getVolunteers = async (req, res) => {
       .skip(skip)
       .limit(parseInt(limit));
 
+    // Transform volunteers to include direct fields or user fields
+    const transformedVolunteers = volunteers.map(v => {
+      const volunteer = v.toObject();
+      // Use direct fields if available, otherwise use user fields
+      if (!volunteer.first_name && volunteer.user_id) {
+        const nameParts = (volunteer.user_id.full_name || '').split(' ');
+        volunteer.first_name = nameParts[0] || '';
+        volunteer.last_name = nameParts.slice(1).join(' ') || '';
+        volunteer.email = volunteer.user_id.email;
+        volunteer.phone = volunteer.user_id.phone;
+      }
+      // Map _id to id for frontend compatibility
+      volunteer.id = volunteer._id;
+      return volunteer;
+    });
+
     const total = await Volunteer.countDocuments(query);
+
+    console.log(`📊 Returning ${transformedVolunteers.length} volunteers`);
 
     res.json({
       success: true,
-      data: volunteers,
+      data: transformedVolunteers,
       pagination: {
         page: parseInt(page),
         limit: parseInt(limit),
@@ -98,8 +120,11 @@ const createVolunteer = async (req, res) => {
       });
     }
 
+    console.log('📝 Creating volunteer with data:', req.body);
+
     const volunteerData = {
       ...req.body,
+      status: req.body.status || 'active',
       background_check_status: 'pending',
       onboarding_completed: false,
       total_hours_volunteered: 0,
@@ -109,9 +134,15 @@ const createVolunteer = async (req, res) => {
     const volunteer = new Volunteer(volunteerData);
     await volunteer.save();
 
-    // Populate the created volunteer
-    await volunteer.populate('user_id', 'full_name email phone avatar_url');
-    await volunteer.populate('community_id', 'name');
+    console.log('✅ Volunteer created:', volunteer._id);
+
+    // Populate if user_id exists
+    if (volunteer.user_id) {
+      await volunteer.populate('user_id', 'full_name email phone avatar_url');
+    }
+    if (volunteer.community_id) {
+      await volunteer.populate('community_id', 'name');
+    }
 
     res.status(201).json({
       success: true,
@@ -122,7 +153,8 @@ const createVolunteer = async (req, res) => {
     console.error('Error creating volunteer:', error);
     res.status(500).json({
       success: false,
-      message: 'Failed to create volunteer profile'
+      message: 'Failed to create volunteer profile',
+      error: error.message
     });
   }
 };
@@ -140,7 +172,7 @@ const updateVolunteer = async (req, res) => {
       },
       { new: true, runValidators: true }
     ).populate('user_id', 'full_name email phone avatar_url')
-     .populate('community_id', 'name');
+      .populate('community_id', 'name');
 
     if (!volunteer) {
       return res.status(404).json({
@@ -176,7 +208,7 @@ const approveVolunteer = async (req, res) => {
       },
       { new: true, runValidators: true }
     ).populate('user_id', 'full_name email phone avatar_url')
-     .populate('community_id', 'name');
+      .populate('community_id', 'name');
 
     if (!volunteer) {
       return res.status(404).json({
@@ -212,7 +244,7 @@ const rejectVolunteer = async (req, res) => {
       },
       { new: true, runValidators: true }
     ).populate('user_id', 'full_name email phone avatar_url')
-     .populate('community_id', 'name');
+      .populate('community_id', 'name');
 
     if (!volunteer) {
       return res.status(404).json({
@@ -256,7 +288,7 @@ const updateVolunteerHours = async (req, res) => {
       },
       { new: true, runValidators: true }
     ).populate('user_id', 'full_name email phone avatar_url')
-     .populate('community_id', 'name');
+      .populate('community_id', 'name');
 
     if (!volunteer) {
       return res.status(404).json({

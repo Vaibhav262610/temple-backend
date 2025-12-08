@@ -493,6 +493,56 @@ router.delete('/events/:id', async (req, res) => {
   }
 });
 
+// DELETE event for a specific community (frontend uses this route)
+router.delete('/communities/:communityId/events/:eventId', async (req, res) => {
+  try {
+    const { communityId, eventId } = req.params;
+
+    console.log('📅 Deleting event:', eventId, 'from community:', communityId);
+
+    // Verify the event belongs to the community before deleting
+    const { data: existingEvent, error: checkError } = await supabaseService.client
+      .from('community_events')
+      .select('*')
+      .eq('id', eventId)
+      .eq('community_id', communityId)
+      .single();
+
+    if (checkError || !existingEvent) {
+      return res.status(404).json({
+        success: false,
+        message: 'Event not found in this community'
+      });
+    }
+
+    const { data, error } = await supabaseService.client
+      .from('community_events')
+      .delete()
+      .eq('id', eventId)
+      .eq('community_id', communityId)
+      .select('*')
+      .single();
+
+    if (error) throw error;
+
+    console.log('✅ Event deleted:', data.id);
+
+    res.json({
+      success: true,
+      data,
+      message: 'Event deleted successfully'
+    });
+
+  } catch (error) {
+    console.error('Error deleting event:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to delete event',
+      error: error.message
+    });
+  }
+});
+
 // POST register for event
 router.post('/events/:id/register', async (req, res) => {
   try {

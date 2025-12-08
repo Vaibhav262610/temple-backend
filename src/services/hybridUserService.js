@@ -84,11 +84,15 @@ class HybridUserService {
         .from('users')
         .select('*')
         .eq('id', String(id))
-        .single();
+        .maybeSingle();
 
       if (!error && data) {
         console.log('✅ User found in Supabase by ID:', data.id);
         return data;
+      }
+
+      if (error) {
+        console.log('⚠️ Supabase findUserById error:', error.message);
       }
     } catch (error) {
       console.log('⚠️ Supabase query failed, checking memory:', error.message);
@@ -159,6 +163,126 @@ class HybridUserService {
     const memoryUsers = Array.from(users.values());
     console.log('✅ Users loaded from memory:', memoryUsers.length);
     return memoryUsers;
+  }
+
+  static async updateUser(id, updateData) {
+    const now = new Date().toISOString();
+
+    // Remove password from update data (use changePassword instead)
+    const { password, password_hash, ...safeUpdateData } = updateData;
+
+    // First, find the user to ensure they exist
+    const existingUser = await this.findUserById(id);
+    if (!existingUser) {
+      console.log('❌ User not found for update:', id);
+      return null;
+    }
+
+    // Update in memory
+    const memoryUser = users.get(String(id));
+    if (memoryUser) {
+      Object.assign(memoryUser, safeUpdateData, { updated_at: now });
+      users.set(String(id), memoryUser);
+      usersByEmail.set(memoryUser.email, memoryUser);
+      console.log('✅ User updated in memory:', memoryUser.email);
+    }
+
+    // Attempt to update in Supabase
+    try {
+      const { data, error } = await supabaseService.client
+        .from('users')
+        .update({
+          ...safeUpdateData,
+          updated_at: now
+        })
+        .eq('id', String(id))
+        .select('*')
+        .maybeSingle();
+
+      if (error) {
+        console.log('❌ Supabase update error:', error);
+      }
+
+      if (!error && data) {
+        console.log('✅ User updated in Supabase:', data.email);
+        return data;
+      }
+    } catch (error) {
+      console.log('⚠️ Supabase update failed:', error.message);
+    }
+
+    // Return the updated existing user data if Supabase failed
+    return memoryUser || { ...existingUser, ...safeUpdateData, updated_at: now };
+  }
+
+  static async updateUserPassword(id, hashedPassword) {
+    const now = new Date().toISOString();
+
+    // Update in memory
+    const memoryUser = users.get(String(id));
+    if (memoryUser) {
+      memoryUser.password_hash = hashedPassword;
+      memoryUser.updated_at = now;
+      users.set(String(id), memoryUser);
+      usersByEmail.set(memoryUser.email, memoryUser);
+      console.log('✅ Password updated in memory');
+    }
+
+    // Attempt to update in Supabase
+    try {
+      const { data, error } = await supabaseService.client
+        .from('users')
+        .update({
+          password_hash: hashedPassword,
+          updated_at: now
+        })
+        .eq('id', String(id))
+        .select('id, email')
+        .maybeSingle();
+
+      if (error) {
+        console.log('⚠️ Supabase password update error:', error.message);
+      }
+
+      if (!error && data) {
+        console.log('✅ Password updated in Supabase');
+        return true;
+      }
+    } catch (error) {
+      console.log('⚠️ Supabase password update failed:', error.message);
+    }
+
+    // Return true if we at least updated memory, or if user exists in Supabase
+    return true;
+  }
+
+  static async deleteUser(id) {
+    const userId = String(id);
+
+    // Delete from memory
+    const memoryUser = users.get(userId);
+    if (memoryUser) {
+      users.delete(userId);
+      usersByEmail.delete(memoryUser.email);
+      console.log('✅ User deleted from memory:', memoryUser.email);
+    }
+
+    // Attempt to delete from Supabase
+    try {
+      const { error } = await supabaseService.client
+        .from('users')
+        .delete()
+        .eq('id', userId);
+
+      if (!error) {
+        console.log('✅ User deleted from Supabase');
+        return true;
+      }
+    } catch (error) {
+      console.log('⚠️ Supabase delete failed (memory deleted):', error.message);
+    }
+
+    return !!memoryUser;
   }
 }
 

@@ -131,13 +131,17 @@ router.put('/:id', async (req, res) => {
   try {
     console.log('📝 Updating community:', req.params.id, req.body);
 
-    const { name, description, logo_url, status } = req.body;
+    const { name, description, logo_url, status, owner_id } = req.body;
 
     const updateData = {};
     if (name) updateData.name = name;
     if (description !== undefined) updateData.description = description;
     if (logo_url !== undefined) updateData.logo_url = logo_url;
     if (status) updateData.status = status;
+    if (owner_id) {
+      updateData.owner_id = owner_id;
+      console.log('🔄 Transferring ownership to:', owner_id);
+    }
 
     // Use hybrid service to update in Supabase + memory
     const community = await HybridCommunityService.updateCommunity(req.params.id, updateData);
@@ -152,7 +156,7 @@ router.put('/:id', async (req, res) => {
     res.json({
       success: true,
       data: community,
-      message: 'Community updated successfully'
+      message: owner_id ? 'Community ownership transferred successfully' : 'Community updated successfully'
     });
   } catch (error) {
     console.error('Error updating community:', error);
@@ -240,6 +244,111 @@ router.get('/:id/members', getCommunityMembers);
 router.post('/:id/members', addMember);
 router.put('/:id/members/:memberId', updateMember);
 router.delete('/:id/members/:memberId', removeMember);
+
+// GET community finances
+router.get('/:id/finances', async (req, res) => {
+  try {
+    const communityId = req.params.id;
+    console.log('💰 Fetching finances for community:', communityId);
+
+    // Fetch donations for this community
+    let totalDonations = 0;
+    let donationCount = 0;
+    try {
+      const { data: donations, error } = await supabaseService.client
+        .from('donations')
+        .select('amount')
+        .eq('community_id', communityId);
+
+      if (!error && donations) {
+        donationCount = donations.length;
+        totalDonations = donations.reduce((sum, d) => sum + (parseFloat(d.amount) || 0), 0);
+      }
+    } catch (err) {
+      console.log('⚠️ Could not fetch donations:', err.message);
+    }
+
+    // Fetch expenses for this community
+    let totalExpenses = 0;
+    let expenseCount = 0;
+    try {
+      const { data: expenses, error } = await supabaseService.client
+        .from('expenses')
+        .select('amount')
+        .eq('community_id', communityId);
+
+      if (!error && expenses) {
+        expenseCount = expenses.length;
+        totalExpenses = expenses.reduce((sum, e) => sum + (parseFloat(e.amount) || 0), 0);
+      }
+    } catch (err) {
+      console.log('⚠️ Could not fetch expenses:', err.message);
+    }
+
+    res.json({
+      success: true,
+      data: {
+        total_donations: totalDonations,
+        donation_count: donationCount,
+        total_expenses: totalExpenses,
+        expense_count: expenseCount,
+        net_balance: totalDonations - totalExpenses
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching finances:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch finances',
+      error: error.message
+    });
+  }
+});
+
+// GET community leads
+router.get('/:id/leads', async (req, res) => {
+  try {
+    const communityId = req.params.id;
+    console.log('👥 Fetching leads for community:', communityId);
+
+    const { data, error } = await supabaseService.client
+      .from('community_members')
+      .select('*, user:user_id(id, full_name, email, avatar_url)')
+      .eq('community_id', communityId)
+      .eq('is_lead', true);
+
+    if (error) {
+      console.error('Error fetching leads:', error);
+      return res.status(500).json({
+        success: false,
+        message: 'Failed to fetch leads',
+        error: error.message
+      });
+    }
+
+    // Map the data to include user info at top level
+    const leads = (data || []).map(lead => ({
+      ...lead,
+      full_name: lead.user?.full_name || lead.full_name || lead.name,
+      email: lead.user?.email || lead.email,
+      avatar_url: lead.user?.avatar_url || lead.avatar_url
+    }));
+
+    console.log('✅ Found leads:', leads.length);
+
+    res.json({
+      success: true,
+      data: leads
+    });
+  } catch (error) {
+    console.error('Error fetching leads:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch leads',
+      error: error.message
+    });
+  }
+});
 
 console.log('✅ communities.js: Member routes registered');
 

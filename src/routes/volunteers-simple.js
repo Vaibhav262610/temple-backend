@@ -422,25 +422,10 @@ router.get('/attendance', async (req, res) => {
 
         console.log('📊 Fetching attendance with filters:', { volunteer_id, shift_id, date, limit, page });
 
+        // Simple query without joins (foreign keys may not exist)
         let query = supabaseService.client
             .from('volunteer_attendance')
-            .select(`
-                *,
-                volunteers:volunteer_id (
-                    id,
-                    first_name,
-                    last_name,
-                    email
-                ),
-                volunteer_shifts:shift_id (
-                    id,
-                    title,
-                    shift_date,
-                    start_time,
-                    end_time,
-                    location
-                )
-            `)
+            .select('*')
             .order('created_at', { ascending: false });
 
         // Apply filters
@@ -451,22 +436,53 @@ router.get('/attendance', async (req, res) => {
             query = query.eq('shift_id', shift_id);
         }
         if (date) {
-            // Filter by shift date through the volunteer_shifts relation
-            query = query.eq('volunteer_shifts.shift_date', date);
+            query = query.eq('attendance_date', date);
         }
 
         // Pagination
         const offset = (parseInt(page) - 1) * parseInt(limit);
         query = query.range(offset, offset + parseInt(limit) - 1);
 
-        const { data, error } = await query;
+        const { data: attendanceData, error } = await query;
 
         if (error) throw error;
 
+        // Fetch volunteer and shift details separately if needed
+        const enrichedData = await Promise.all((attendanceData || []).map(async (attendance) => {
+            let volunteer = null;
+            let shift = null;
+
+            // Fetch volunteer details
+            if (attendance.volunteer_id) {
+                const { data: volunteerData } = await supabaseService.client
+                    .from('volunteers')
+                    .select('id, first_name, last_name, email')
+                    .eq('id', attendance.volunteer_id)
+                    .single();
+                volunteer = volunteerData;
+            }
+
+            // Fetch shift details
+            if (attendance.shift_id) {
+                const { data: shiftData } = await supabaseService.client
+                    .from('volunteer_shifts')
+                    .select('id, title, shift_date, start_time, end_time, location')
+                    .eq('id', attendance.shift_id)
+                    .single();
+                shift = shiftData;
+            }
+
+            return {
+                ...attendance,
+                volunteers: volunteer,
+                volunteer_shifts: shift
+            };
+        }));
+
         res.json({
             success: true,
-            data: data || [],
-            total: data?.length || 0,
+            data: enrichedData || [],
+            total: enrichedData?.length || 0,
             page: parseInt(page),
             limit: parseInt(limit)
         });

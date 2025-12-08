@@ -6,12 +6,12 @@ class CommunityService {
   // Create a new community
   async createCommunity(communityData, userId) {
     console.log('🔵 Creating community:', { communityData, userId });
-    
+
     // Validate required fields
     if (!communityData.name || !communityData.owner_id) {
       throw new Error('Name and owner_id are required');
     }
-  
+
     const { data, error } = await supabase
       .from('communities')
       .insert([{
@@ -39,14 +39,14 @@ class CommunityService {
         )
       `)
       .single();
-  
+
     if (error) {
       console.error('❌ Supabase error:', error);
       throw error;
     }
-  
+
     console.log('✅ Community created:', data);
-  
+
     // Add owner as a community lead
     const { error: memberError } = await supabase
       .from('community_members')
@@ -56,11 +56,11 @@ class CommunityService {
         role: 'lead',
         status: 'active'
       }]);
-  
+
     if (memberError) {
       console.error('⚠️ Failed to add owner as member:', memberError);
     }
-  
+
     // Log activity (don't let this fail the request)
     try {
       await ActivityLogger.logCommunityActivity(
@@ -72,7 +72,7 @@ class CommunityService {
     } catch (logError) {
       console.error('⚠️ Failed to log activity:', logError);
     }
-  
+
     return data;
   }
 
@@ -115,8 +115,8 @@ class CommunityService {
       query = query.or(`name.ilike.%${search}%,description.ilike.%${search}%`);
     }
 
-    // If not super admin, only show communities user has access to
-    if (!userRoles.includes('super_admin')) {
+    // If not admin, only show communities user has access to
+    if (!userRoles.includes('admin')) {
       // Get user's community memberships
       const { data: memberships } = await supabase
         .from('community_members')
@@ -125,7 +125,7 @@ class CommunityService {
         .eq('status', 'active');
 
       const communityIds = memberships?.map(m => m.community_id) || [];
-      
+
       if (communityIds.length > 0) {
         query = query.or(`owner_id.eq.${userId},id.in.(${communityIds.join(',')})`);
       } else {

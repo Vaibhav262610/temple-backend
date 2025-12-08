@@ -3,6 +3,41 @@ const express = require('express');
 const router = express.Router();
 const supabaseService = require('../services/supabaseService');
 
+// Default religious images for events without custom images
+const DEFAULT_EVENT_IMAGES = [
+    "https://images.unsplash.com/photo-1609619385002-f40f1df9b7eb?w=800&h=600&fit=crop", // Om
+    "https://images.unsplash.com/photo-1548013146-72479768bada?w=800&h=600&fit=crop", // Temple
+    "https://images.unsplash.com/photo-1604608672516-f1b9b1a4a0e5?w=800&h=600&fit=crop", // Diya
+    "https://images.unsplash.com/photo-1582510003544-4d00b7f74220?w=800&h=600&fit=crop", // Flowers
+    "https://images.unsplash.com/photo-1545389336-cf090694435e?w=800&h=600&fit=crop", // Prayer
+    "https://images.unsplash.com/photo-1506126613408-eca07ce68773?w=800&h=600&fit=crop", // Meditation
+    "https://images.unsplash.com/photo-1470252649378-9c29740c9fa8?w=800&h=600&fit=crop", // Sunrise
+];
+
+// Get default image based on event ID for consistency
+function getDefaultImage(eventId, title) {
+    const lowerTitle = (title || '').toLowerCase();
+
+    // Category-specific defaults
+    if (lowerTitle.includes('puja') || lowerTitle.includes('archana')) {
+        return DEFAULT_EVENT_IMAGES[2]; // Diya
+    }
+    if (lowerTitle.includes('festival') || lowerTitle.includes('navaratri') || lowerTitle.includes('diwali')) {
+        return DEFAULT_EVENT_IMAGES[3]; // Flowers
+    }
+    if (lowerTitle.includes('meditation') || lowerTitle.includes('yoga')) {
+        return DEFAULT_EVENT_IMAGES[5]; // Meditation
+    }
+
+    // Consistent default based on event ID
+    if (eventId) {
+        const hash = eventId.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
+        return DEFAULT_EVENT_IMAGES[hash % DEFAULT_EVENT_IMAGES.length];
+    }
+
+    return DEFAULT_EVENT_IMAGES[0];
+}
+
 // GET all public events (no authentication required)
 router.get('/', async (req, res) => {
     try {
@@ -60,10 +95,17 @@ router.get('/', async (req, res) => {
 
         console.log(`✅ Found ${events?.length || 0} public events`);
 
+        // Add default images for events without custom images
+        const eventsWithImages = (events || []).map(event => ({
+            ...event,
+            image_url: event.image_url || getDefaultImage(event.id, event.title),
+            thumbnail_url: event.thumbnail_url || event.image_url || getDefaultImage(event.id, event.title)
+        }));
+
         res.json({
             success: true,
-            data: events || [],
-            count: events?.length || 0
+            data: eventsWithImages,
+            count: eventsWithImages.length
         });
     } catch (error) {
         console.error('❌ Error in public events route:', error);
@@ -117,9 +159,16 @@ router.get('/:id', async (req, res) => {
 
         console.log('✅ Found public event:', event.title);
 
+        // Add default image if none exists
+        const eventWithImage = {
+            ...event,
+            image_url: event.image_url || getDefaultImage(event.id, event.title),
+            thumbnail_url: event.thumbnail_url || event.image_url || getDefaultImage(event.id, event.title)
+        };
+
         res.json({
             success: true,
-            data: event
+            data: eventWithImage
         });
     } catch (error) {
         console.error('❌ Error fetching public event:', error);

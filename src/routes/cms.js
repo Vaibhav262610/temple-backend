@@ -418,6 +418,111 @@ router.patch('/contact/:id/read', async (req, res) => {
 });
 
 // =============================================
+// CMS PUJAS ROUTES
+// =============================================
+router.get('/pujas', async (req, res) => {
+    try {
+        const { data, error } = await supabaseService.client
+            .from('cms_pujas')
+            .select('*')
+            .order('display_order', { ascending: true });
+
+        if (error) throw error;
+        res.json({ success: true, data: data || [] });
+    } catch (error) {
+        console.error('Error fetching CMS pujas:', error);
+        res.status(500).json({ success: false, message: error.message });
+    }
+});
+
+router.get('/pujas/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { data, error } = await supabaseService.client
+            .from('cms_pujas')
+            .select('*')
+            .eq('id', id)
+            .single();
+
+        if (error) throw error;
+        res.json({ success: true, data });
+    } catch (error) {
+        console.error('Error fetching CMS puja:', error);
+        res.status(500).json({ success: false, message: error.message });
+    }
+});
+
+router.post('/pujas', async (req, res) => {
+    try {
+        const { data, error } = await supabaseService.client
+            .from('cms_pujas')
+            .insert(req.body)
+            .select('*')
+            .single();
+
+        if (error) throw error;
+        res.status(201).json({ success: true, data, message: 'Puja created successfully' });
+    } catch (error) {
+        console.error('Error creating CMS puja:', error);
+        res.status(500).json({ success: false, message: error.message });
+    }
+});
+
+router.put('/pujas/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { data, error } = await supabaseService.client
+            .from('cms_pujas')
+            .update({
+                ...req.body,
+                updated_at: new Date().toISOString()
+            })
+            .eq('id', id)
+            .select('*')
+            .single();
+
+        if (error) throw error;
+        res.json({ success: true, data, message: 'Puja updated successfully' });
+    } catch (error) {
+        console.error('Error updating CMS puja:', error);
+        res.status(500).json({ success: false, message: error.message });
+    }
+});
+
+router.delete('/pujas/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { error } = await supabaseService.client
+            .from('cms_pujas')
+            .delete()
+            .eq('id', id);
+
+        if (error) throw error;
+        res.json({ success: true, message: 'Puja deleted successfully' });
+    } catch (error) {
+        console.error('Error deleting CMS puja:', error);
+        res.status(500).json({ success: false, message: error.message });
+    }
+});
+
+// PUBLIC ENDPOINT: Get active pujas for website
+router.get('/public/pujas', async (req, res) => {
+    try {
+        const { data, error } = await supabaseService.client
+            .from('cms_pujas')
+            .select('*')
+            .eq('is_active', true)
+            .order('display_order', { ascending: true });
+
+        if (error) throw error;
+        res.json({ success: true, data: data || [] });
+    } catch (error) {
+        console.error('Error fetching public pujas:', error);
+        res.status(500).json({ success: false, message: error.message });
+    }
+});
+
+// =============================================
 // ABOUT MANDIR ROUTES
 // =============================================
 router.get('/about-mandir', async (req, res) => {

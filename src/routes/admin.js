@@ -54,14 +54,15 @@ router.post('/create-user', async (req, res) => {
 
     // Valid roles
     const validRoles = [
-      'super_admin',
-      'community_owner',
-      'finance',
+      'admin',
       'board',
+      'community_owner',
+      'volunteer_head',
+      'priest',
+      'finance_team',
       'community_lead',
       'community_member',
       'volunteer',
-      'chairman',
       'user'
     ];
 
@@ -183,7 +184,7 @@ router.post('/create-user', async (req, res) => {
                 <li>Access the Temple Management Dashboard</li>
                 <li>View and manage temple activities</li>
                 <li>Participate in community events</li>
-                ${userRole === 'chairman' || userRole === 'board' || userRole === 'super_admin' ? '<li>Access administrative features</li>' : ''}
+                ${userRole === 'admin' || userRole === 'board' ? '<li>Access administrative features</li>' : ''}
               </ul>
               
               <p style="color: #666; font-size: 14px; margin-top: 30px;">
@@ -241,18 +242,20 @@ router.post('/create-user', async (req, res) => {
   }
 });
 
-// Assign role to user (super_admin only)
+// Assign role to user (admin only)
 router.post('/assign-role',
-  checkRole(['super_admin']),
+  checkRole(['admin']),
   async (req, res) => {
     const { email, role } = req.body;
 
     // Valid roles
     const validRoles = [
-      'super_admin',
-      'community_owner',
-      'finance',
+      'admin',
       'board',
+      'community_owner',
+      'volunteer_head',
+      'priest',
+      'finance_team',
       'community_lead',
       'community_member',
       'volunteer'

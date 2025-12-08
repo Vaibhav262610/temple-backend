@@ -11,8 +11,7 @@ const PAGINATION = {
 };
 
 const ROLES = {
-  SUPER_ADMIN: 'super_admin',
-  CHAIRMAN: 'chairman',
+  ADMIN: 'admin',
   BOARD: 'board',
   FINANCE: 'finance',
   COMMUNITY_OWNER: 'community_owner',
@@ -26,21 +25,18 @@ const ROLES = {
 
 const PERMISSIONS = {
   CAN_CREATE_COMMUNITY: [
-    ROLES.SUPER_ADMIN,
-    ROLES.CHAIRMAN,
+    ROLES.ADMIN,
     ROLES.BOARD,
     ROLES.COMMUNITY_OWNER
   ],
   CAN_MANAGE_COMMUNITY: [
-    ROLES.SUPER_ADMIN,
-    ROLES.CHAIRMAN,
+    ROLES.ADMIN,
     ROLES.BOARD,
     ROLES.COMMUNITY_OWNER,
     ROLES.COMMUNITY_LEAD
   ],
   CAN_VIEW_FINANCE: [
-    ROLES.SUPER_ADMIN,
-    ROLES.CHAIRMAN,
+    ROLES.ADMIN,
     ROLES.BOARD,
     ROLES.FINANCE
   ],

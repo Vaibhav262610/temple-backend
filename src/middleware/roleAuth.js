@@ -35,8 +35,8 @@ function checkRole(allowedRoles = []) {
             // Check if user has required role
             const userRole = decoded.role || 'user';
 
-            // Super admin has access to everything
-            if (userRole === 'super_admin') {
+            // Admin has access to everything
+            if (userRole === 'admin') {
                 req.user = decoded;
                 return next();
             }

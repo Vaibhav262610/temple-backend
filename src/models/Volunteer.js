@@ -2,10 +2,47 @@
 const mongoose = require('mongoose');
 
 const volunteerSchema = new mongoose.Schema({
+  // Optional user reference (for volunteers who are also users)
   user_id: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
-    required: true
+    required: false
+  },
+  // Direct volunteer info (for volunteers added manually)
+  first_name: {
+    type: String,
+    trim: true
+  },
+  last_name: {
+    type: String,
+    trim: true
+  },
+  email: {
+    type: String,
+    trim: true,
+    lowercase: true
+  },
+  phone: {
+    type: String,
+    trim: true
+  },
+  date_of_birth: {
+    type: Date
+  },
+  address: {
+    street: String,
+    city: String,
+    state: String,
+    zip: String
+  },
+  notes: {
+    type: String,
+    trim: true
+  },
+  status: {
+    type: String,
+    enum: ['active', 'inactive', 'pending', 'suspended'],
+    default: 'active'
   },
   skills: [{
     type: String,
@@ -72,7 +109,7 @@ const volunteerSchema = new mongoose.Schema({
 });
 
 // Update the updated_at field before saving
-volunteerSchema.pre('save', function(next) {
+volunteerSchema.pre('save', function (next) {
   this.updated_at = new Date();
   next();
 });

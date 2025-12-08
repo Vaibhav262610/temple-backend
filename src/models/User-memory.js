@@ -12,7 +12,7 @@ const testUsers = [
     email: 'admin@temple.com',
     password_hash: '$2b$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', // "password123"
     full_name: 'Temple Administrator',
-    role: 'super_admin',
+    role: 'admin',
     status: 'active',
     created_at: new Date(),
     updated_at: new Date()
@@ -47,7 +47,7 @@ class UserAdapter {
     const now = new Date();
     const id = this.id || this._id || randomUUID();
     const email = (this.email || '').toLowerCase();
-    
+
     const userData = {
       id,
       email,
@@ -70,11 +70,11 @@ class UserAdapter {
       last_login_at: this.last_login || this.last_login_at || null,
       password_hash: this.password_hash || null
     };
-    
+
     // Store in memory
     users.set(id, userData);
     usersByEmail.set(email, userData);
-    
+
     // Update instance
     Object.assign(this, userData, { _id: id });
     return this;
@@ -85,13 +85,13 @@ class UserAdapter {
       const user = usersByEmail.get(filter.email.toLowerCase());
       return user ? new UserAdapter(user) : null;
     }
-    
+
     if (filter.id || filter._id) {
       const id = filter.id || filter._id;
       const user = users.get(String(id));
       return user ? new UserAdapter(user) : null;
     }
-    
+
     // Find first matching user
     for (const user of users.values()) {
       let matches = true;
@@ -105,7 +105,7 @@ class UserAdapter {
         return new UserAdapter(user);
       }
     }
-    
+
     return null;
   }
 
@@ -132,8 +132,8 @@ class UserAdapter {
             }
           }
           resolve(results);
-        } catch (e) { 
-          reject && reject(e); 
+        } catch (e) {
+          reject && reject(e);
         }
       },
       select() { return chain; },
@@ -148,32 +148,32 @@ class UserAdapter {
   static async findByIdAndUpdate(id, update = {}, options = {}) {
     const current = await UserAdapter.findById(id);
     if (!current) return null;
-    
+
     // Apply updates
     const merged = { ...current };
     Object.assign(merged, update);
     merged.updated_at = new Date();
-    
+
     // Save back
     users.set(String(id), merged);
     if (merged.email) {
       usersByEmail.set(merged.email.toLowerCase(), merged);
     }
-    
+
     const result = options && options.new === false ? current : new UserAdapter({ ...merged, _id: merged.id });
-    result.select = function() { return this; };
+    result.select = function () { return this; };
     return result;
   }
 
   static async findByIdAndDelete(id) {
     const existing = await UserAdapter.findById(id);
     if (!existing) return null;
-    
+
     users.delete(String(id));
     if (existing.email) {
       usersByEmail.delete(existing.email.toLowerCase());
     }
-    
+
     return existing;
   }
 

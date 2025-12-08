@@ -16,9 +16,18 @@ const { body } = require('express-validator');
 
 // Validation rules
 const volunteerValidation = [
-  body('user_id')
-    .isMongoId()
-    .withMessage('Valid user ID is required'),
+  body('first_name')
+    .optional()
+    .isString()
+    .withMessage('First name must be a string'),
+  body('last_name')
+    .optional()
+    .isString()
+    .withMessage('Last name must be a string'),
+  body('email')
+    .optional()
+    .isEmail()
+    .withMessage('Valid email is required'),
   body('skills')
     .optional()
     .isArray()
@@ -33,8 +42,6 @@ const volunteerValidation = [
     .optional(),
   body('community_id')
     .optional()
-    .isMongoId()
-    .withMessage('Valid community ID is required')
 ];
 
 // Routes

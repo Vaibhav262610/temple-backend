@@ -1,5 +1,4 @@
 // Users Controller - Supabase
-const User = require('../models/User');
 const HybridUserService = require('../services/hybridUserService');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
@@ -69,7 +68,7 @@ const registerUser = async (req, res) => {
     // Send welcome/verification email
     try {
       const emailService = require('../services/emailService-sendgrid');
-      const isAdminRegistration = role && ['chairman', 'board', 'community_owner', 'super_admin'].includes(role);
+      const isAdminRegistration = role && ['admin', 'board', 'community_owner', 'volunteer_head', 'priest', 'finance_team'].includes(role);
 
       const emailSubject = isAdminRegistration
         ? '🎉 Admin Account Created - Temple Management System'
@@ -279,36 +278,35 @@ const getUsers = async (req, res) => {
       limit = 50
     } = req.query;
 
-    const query = {};
+    let allUsers = await HybridUserService.getAllUsers();
 
+    // Apply filters
     if (status && status !== 'all') {
-      query.status = status;
+      allUsers = allUsers.filter(u => u.status === status);
     }
 
     if (role && role !== 'all') {
-      query.role = role;
+      allUsers = allUsers.filter(u => u.role === role);
     }
 
     if (search) {
-      query.$or = [
-        { full_name: { $regex: search, $options: 'i' } },
-        { email: { $regex: search, $options: 'i' } }
-      ];
+      const searchLower = search.toLowerCase();
+      allUsers = allUsers.filter(u =>
+        (u.full_name && u.full_name.toLowerCase().includes(searchLower)) ||
+        (u.email && u.email.toLowerCase().includes(searchLower))
+      );
     }
 
+    const total = allUsers.length;
     const skip = (parseInt(page) - 1) * parseInt(limit);
+    const paginatedUsers = allUsers.slice(skip, skip + parseInt(limit));
 
-    const users = await User.find(query)
-      .select('-password_hash') // Exclude password hash
-      .sort({ created_at: -1 })
-      .skip(skip)
-      .limit(parseInt(limit));
-
-    const total = await User.countDocuments(query);
+    // Remove password_hash from response
+    const safeUsers = paginatedUsers.map(({ password_hash, ...user }) => user);
 
     res.json({
       success: true,
-      data: users,
+      data: safeUsers,
       pagination: {
         page: parseInt(page),
         limit: parseInt(limit),
@@ -330,7 +328,7 @@ const getUserById = async (req, res) => {
   try {
     const { id } = req.params;
 
-    const user = await User.findById(id).select('-password_hash');
+    const user = await HybridUserService.findUserById(id);
 
     if (!user) {
       return res.status(404).json({
@@ -339,9 +337,12 @@ const getUserById = async (req, res) => {
       });
     }
 
+    // Remove password_hash from response
+    const { password_hash, ...safeUser } = user;
+
     res.json({
       success: true,
-      data: user
+      data: safeUser
     });
   } catch (error) {
     console.error('Error fetching user:', error);
@@ -358,16 +359,9 @@ const updateUser = async (req, res) => {
     const { id } = req.params;
 
     // Prevent password updates through this endpoint
-    const { password, ...updateData } = req.body;
+    const { password, password_hash, ...updateData } = req.body;
 
-    const user = await User.findByIdAndUpdate(
-      id,
-      {
-        ...updateData,
-        updated_at: new Date()
-      },
-      { new: true, runValidators: true }
-    ).select('-password_hash');
+    const user = await HybridUserService.updateUser(id, updateData);
 
     if (!user) {
       return res.status(404).json({
@@ -376,10 +370,13 @@ const updateUser = async (req, res) => {
       });
     }
 
+    // Remove password_hash from response
+    const { password_hash: _, ...safeUser } = user;
+
     res.json({
       success: true,
       message: 'User updated successfully',
-      data: user
+      data: safeUser
     });
   } catch (error) {
     console.error('Error updating user:', error);
@@ -395,12 +392,22 @@ const deleteUser = async (req, res) => {
   try {
     const { id } = req.params;
 
-    const user = await User.findByIdAndDelete(id);
-
+    // First check if user exists
+    const user = await HybridUserService.findUserById(id);
     if (!user) {
       return res.status(404).json({
         success: false,
         message: 'User not found'
+      });
+    }
+
+    // Delete from HybridUserService
+    const deleted = await HybridUserService.deleteUser(id);
+
+    if (!deleted) {
+      return res.status(500).json({
+        success: false,
+        message: 'Failed to delete user'
       });
     }
 
@@ -422,7 +429,7 @@ const changePassword = async (req, res) => {
   try {
     const { currentPassword, newPassword } = req.body;
 
-    const user = await User.findById(req.user.id);
+    const user = await HybridUserService.findUserById(req.user.id);
     if (!user) {
       return res.status(404).json({
         success: false,
@@ -443,9 +450,15 @@ const changePassword = async (req, res) => {
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(newPassword, salt);
 
-    // Update password
-    user.password_hash = hashedPassword;
-    await user.save();
+    // Update password using HybridUserService
+    const updated = await HybridUserService.updateUserPassword(req.user.id, hashedPassword);
+
+    if (!updated) {
+      return res.status(500).json({
+        success: false,
+        message: 'Failed to update password'
+      });
+    }
 
     res.json({
       success: true,

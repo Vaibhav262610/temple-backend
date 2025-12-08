@@ -14,20 +14,20 @@ router.get('/me', authMiddleware, async (req, res) => {
     return res.status(401).json({ success: false, message: 'Not authenticated' });
   }
 
-  res.json({ 
-    success: true, 
-    user: req.user 
+  res.json({
+    success: true,
+    user: req.user
   });
 });
 
 // List user roles
 router.get('/users/:userId/roles', authMiddleware, async (req, res) => {
-  if (req.user.role !== 'super_admin') {
+  if (req.user.role !== 'admin') {
     return res.status(403).json({ success: false, message: 'Forbidden' });
   }
 
   const { userId } = req.params;
-  
+
   const { data, error } = await supabase
     .from('user_roles')
     .select('*')

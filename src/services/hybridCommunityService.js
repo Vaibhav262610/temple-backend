@@ -53,7 +53,64 @@ class HybridCommunityService {
       const data = await supabaseService.getAllCommunities(filters);
       if (data && data.length >= 0) {
         console.log('✅ Communities loaded from Supabase:', data.length);
-        supabaseData = data.map(item => ({ ...item, _id: item.id }));
+
+        // Fetch owner details and stats for each community
+        const communitiesWithDetails = await Promise.all(data.map(async (item) => {
+          let ownerData = null;
+          let memberCount = 0;
+          let leadCount = 0;
+
+          // Fetch owner details
+          if (item.owner_id) {
+            try {
+              const { data: owner, error: ownerError } = await supabaseService.client
+                .from('users')
+                .select('id, full_name, email, avatar_url')
+                .eq('id', item.owner_id)
+                .single();
+
+              if (!ownerError && owner) {
+                ownerData = owner;
+              }
+            } catch (err) {
+              // Silently fail for individual owner lookups
+            }
+          }
+
+          // Fetch member count
+          try {
+            const { count } = await supabaseService.client
+              .from('community_members')
+              .select('*', { count: 'exact', head: true })
+              .eq('community_id', item.id)
+              .eq('status', 'active');
+            memberCount = count || 0;
+          } catch (err) {
+            // Silently fail
+          }
+
+          // Fetch lead count
+          try {
+            const { count } = await supabaseService.client
+              .from('community_members')
+              .select('*', { count: 'exact', head: true })
+              .eq('community_id', item.id)
+              .eq('is_lead', true);
+            leadCount = count || 0;
+          } catch (err) {
+            // Silently fail
+          }
+
+          return {
+            ...item,
+            _id: item.id,
+            owner: ownerData,
+            member_count: memberCount,
+            lead_count: leadCount
+          };
+        }));
+
+        supabaseData = communitiesWithDetails;
       }
     } catch (error) {
       console.log('⚠️ Supabase connection failed, using memory:', error.message);
@@ -91,6 +148,7 @@ class HybridCommunityService {
   static async getCommunityById(id) {
     // Try Supabase first
     try {
+      // Fetch community with owner details
       const { data, error } = await supabaseService.client
         .from('communities')
         .select('*')
@@ -99,7 +157,65 @@ class HybridCommunityService {
 
       if (!error && data) {
         console.log('✅ Community found in Supabase by ID:', data.id);
-        return { ...data, _id: data.id };
+
+        // Fetch owner details if owner_id exists
+        let ownerData = null;
+        if (data.owner_id) {
+          try {
+            const { data: owner, error: ownerError } = await supabaseService.client
+              .from('users')
+              .select('id, full_name, email, avatar_url')
+              .eq('id', data.owner_id)
+              .single();
+
+            if (!ownerError && owner) {
+              ownerData = owner;
+              console.log('✅ Owner found:', owner.full_name);
+            }
+          } catch (ownerErr) {
+            console.log('⚠️ Could not fetch owner details:', ownerErr.message);
+          }
+        }
+
+        // Fetch member count
+        let memberCount = 0;
+        try {
+          const { count, error: countError } = await supabaseService.client
+            .from('community_members')
+            .select('*', { count: 'exact', head: true })
+            .eq('community_id', data.id)
+            .eq('status', 'active');
+
+          if (!countError) {
+            memberCount = count || 0;
+          }
+        } catch (countErr) {
+          console.log('⚠️ Could not fetch member count:', countErr.message);
+        }
+
+        // Fetch lead count
+        let leadCount = 0;
+        try {
+          const { count, error: leadError } = await supabaseService.client
+            .from('community_members')
+            .select('*', { count: 'exact', head: true })
+            .eq('community_id', data.id)
+            .eq('is_lead', true);
+
+          if (!leadError) {
+            leadCount = count || 0;
+          }
+        } catch (leadErr) {
+          console.log('⚠️ Could not fetch lead count:', leadErr.message);
+        }
+
+        return {
+          ...data,
+          _id: data.id,
+          owner: ownerData,
+          member_count: memberCount,
+          lead_count: leadCount
+        };
       }
     } catch (error) {
       console.log('⚠️ Supabase query failed, checking memory:', error.message);
@@ -119,6 +235,10 @@ class HybridCommunityService {
     const now = new Date().toISOString();
     const updates = { ...updateData, updated_at: now };
 
+    console.log('📝 HybridCommunityService.updateCommunity called');
+    console.log('📝 Community ID:', id);
+    console.log('📝 Update data:', JSON.stringify(updates, null, 2));
+
     // Update in memory
     const memoryCommunity = communities.get(String(id));
     if (memoryCommunity) {
@@ -129,6 +249,7 @@ class HybridCommunityService {
 
     // Attempt to update in Supabase
     try {
+      console.log('📤 Sending update to Supabase...');
       const { data, error } = await supabaseService.client
         .from('communities')
         .update(updates)
@@ -138,12 +259,14 @@ class HybridCommunityService {
 
       if (!error && data) {
         console.log('✅ Community updated in Supabase:', data.id);
+        console.log('✅ Updated owner_id:', data.owner_id);
         return { ...data, _id: data.id };
       } else {
-        console.log('⚠️ Supabase update failed (memory updated):', error?.message);
+        console.log('⚠️ Supabase update failed:', error?.message);
+        console.log('⚠️ Error details:', JSON.stringify(error, null, 2));
       }
     } catch (error) {
-      console.log('⚠️ Supabase connection failed (memory updated):', error.message);
+      console.log('⚠️ Supabase connection failed:', error.message);
     }
 
     return memoryCommunity ? { ...memoryCommunity, ...updates } : null;
@@ -189,8 +312,78 @@ class HybridCommunityService {
         .single();
 
       if (!error && data) {
+        // Fetch member count
+        let memberCount = 0;
+        try {
+          const { count } = await supabaseService.client
+            .from('community_members')
+            .select('*', { count: 'exact', head: true })
+            .eq('community_id', id)
+            .eq('status', 'active');
+          memberCount = count || 0;
+        } catch (err) {
+          console.log('⚠️ Could not fetch member count:', err.message);
+        }
+
+        // Fetch lead count
+        let leadCount = 0;
+        try {
+          const { count } = await supabaseService.client
+            .from('community_members')
+            .select('*', { count: 'exact', head: true })
+            .eq('community_id', id)
+            .eq('is_lead', true);
+          leadCount = count || 0;
+        } catch (err) {
+          console.log('⚠️ Could not fetch lead count:', err.message);
+        }
+
+        // Fetch active events count
+        let activeEvents = 0;
+        try {
+          const { count } = await supabaseService.client
+            .from('events')
+            .select('*', { count: 'exact', head: true })
+            .eq('community_id', id)
+            .gte('end_date', new Date().toISOString());
+          activeEvents = count || 0;
+        } catch (err) {
+          console.log('⚠️ Could not fetch events count:', err.message);
+        }
+
+        // Fetch pending tasks count
+        let pendingTasks = 0;
+        try {
+          const { count } = await supabaseService.client
+            .from('tasks')
+            .select('*', { count: 'exact', head: true })
+            .eq('community_id', id)
+            .in('status', ['todo', 'in_progress']);
+          pendingTasks = count || 0;
+        } catch (err) {
+          console.log('⚠️ Could not fetch tasks count:', err.message);
+        }
+
+        // Fetch total donations
+        let totalDonations = 0;
+        try {
+          const { data: donations } = await supabaseService.client
+            .from('donations')
+            .select('amount')
+            .eq('community_id', id);
+          if (donations) {
+            totalDonations = donations.reduce((sum, d) => sum + (parseFloat(d.amount) || 0), 0);
+          }
+        } catch (err) {
+          console.log('⚠️ Could not fetch donations:', err.message);
+        }
+
         const stats = {
-          member_count: 0, // Would need to query community_members table
+          member_count: memberCount,
+          lead_count: leadCount,
+          active_events: activeEvents,
+          pending_tasks: pendingTasks,
+          total_donations: totalDonations,
           status: data.status,
           created_at: data.created_at,
           active_days: Math.floor((new Date() - new Date(data.created_at)) / (1000 * 60 * 60 * 24))
@@ -206,6 +399,10 @@ class HybridCommunityService {
     if (memoryCommunity) {
       return {
         member_count: 0,
+        lead_count: 0,
+        active_events: 0,
+        pending_tasks: 0,
+        total_donations: 0,
         status: memoryCommunity.status,
         created_at: memoryCommunity.created_at,
         active_days: Math.floor((new Date() - new Date(memoryCommunity.created_at)) / (1000 * 60 * 60 * 24))
