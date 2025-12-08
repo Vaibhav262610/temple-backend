@@ -54,20 +54,42 @@ app.use(helmet({
 }));
 app.use(compression());
 app.use(morgan('combined'));
+// CORS configuration - allow all origins in development, specific origins in production
+const allowedOrigins = [
+  'http://localhost:8080',
+  'http://localhost:8081',
+  'http://localhost:5173',
+  'http://localhost:3000',
+  'http://localhost:4173',
+  'https://temple-management-cms.vercel.app',
+  'https://temple-management-woad.vercel.app',
+];
+
 app.use(cors({
-  origin: [
-    'http://localhost:8080',
-    'http://localhost:8081',
-    'http://localhost:5173',
-    'http://localhost:3000',
-    'http://localhost:4173',
-    'https://temple-management-cms.vercel.app',
-    'https://temple-management-woad.vercel.app',
-    'https://temple-management-woad.vercel.app/',
-  ],
+  origin: function (origin, callback) {
+    // Allow requests with no origin (like mobile apps or curl requests)
+    if (!origin) return callback(null, true);
+
+    // Allow all localhost origins in development
+    if (origin.includes('localhost') || origin.includes('127.0.0.1')) {
+      return callback(null, true);
+    }
+
+    // Check against allowed origins
+    if (allowedOrigins.indexOf(origin) !== -1) {
+      return callback(null, true);
+    }
+
+    // Allow Vercel preview deployments
+    if (origin.includes('vercel.app')) {
+      return callback(null, true);
+    }
+
+    callback(new Error('Not allowed by CORS'));
+  },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin'],
   exposedHeaders: ['Content-Length', 'X-Request-Id'],
   maxAge: 86400 // 24 hours
 }));

@@ -884,12 +884,19 @@ router.put('/applications/:id/approve', async (req, res) => {
         // Create volunteer record from approved application
         console.log('👥 Creating volunteer record from approved application...');
 
-        // Match the actual volunteers table schema: id, name, email, phone, created_at
+        // Match the volunteers table schema with first_name, last_name fields
         const volunteerData = {
-            name: `${application.first_name} ${application.last_name}`.trim(),
+            first_name: application.first_name || '',
+            last_name: application.last_name || '',
             email: application.email,
             phone: application.phone || null,
-            created_at: new Date().toISOString()
+            skills: application.skills || [],
+            interests: application.interests || [],
+            status: 'active',
+            total_hours_volunteered: 0,
+            community_id: application.community_id || null,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
         };
 
         console.log('📝 Volunteer data to insert:', volunteerData);
@@ -908,7 +915,6 @@ router.put('/applications/:id/approve', async (req, res) => {
                 hint: volunteerError.hint,
                 code: volunteerError.code
             });
-            console.error('❌ Volunteer data that failed:', volunteerData);
             // Don't fail the approval if volunteer creation fails
             console.log('⚠️ Application approved but volunteer record creation failed');
         } else {
