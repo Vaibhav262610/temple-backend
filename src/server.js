@@ -5,6 +5,7 @@ const cors = require('cors');
 const helmet = require('helmet');
 const compression = require('compression');
 const morgan = require('morgan');
+const rateLimit = require('express-rate-limit');
 
 // Import routes
 const userRoutes = require('./routes/users');
@@ -35,6 +36,9 @@ const cmsRoutes = require('./routes/cms');
 const galleryRoutes = require('./routes/gallery');
 const brochuresRoutes = require('./routes/brochures');
 
+// Import auth middleware
+const { requireAuth } = require('./middleware/authMiddleware');
+
 // Import Supabase-backed models
 require('./models/User');
 require('./models/Community');
@@ -54,24 +58,64 @@ app.use(helmet({
 }));
 app.use(compression());
 app.use(morgan('combined'));
-// CORS configuration - allow all origins in development, specific origins in production
+
+// Rate limiting - prevent abuse
+const generalLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 100, // Limit each IP to 100 requests per window
+  message: {
+    success: false,
+    message: 'Too many requests, please try again later.'
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+// Stricter rate limit for auth routes
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 10, // Limit each IP to 10 login attempts per window
+  message: {
+    success: false,
+    message: 'Too many login attempts, please try again after 15 minutes.'
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+// Apply rate limiting
+app.use('/api', generalLimiter);
+app.use('/api/users/login', authLimiter);
+app.use('/api/users/register', authLimiter);
+// CORS configuration - stricter in production
 const allowedOrigins = [
-  'http://localhost:8080',
-  'http://localhost:8081',
-  'http://localhost:5173',
-  'http://localhost:3000',
-  'http://localhost:4173',
   'https://temple-management-cms.vercel.app',
   'https://temple-management-woad.vercel.app',
 ];
 
+// Add localhost origins only in development
+if (process.env.NODE_ENV !== 'production') {
+  allowedOrigins.push(
+    'http://localhost:8080',
+    'http://localhost:8081',
+    'http://localhost:5173',
+    'http://localhost:3000',
+    'http://localhost:4173'
+  );
+}
+
 app.use(cors({
   origin: function (origin, callback) {
-    // Allow requests with no origin (like mobile apps or curl requests)
-    if (!origin) return callback(null, true);
+    // In production, block requests with no origin (prevents curl/Postman abuse)
+    if (!origin) {
+      if (process.env.NODE_ENV === 'production') {
+        return callback(new Error('Direct API access not allowed'));
+      }
+      return callback(null, true); // Allow in development
+    }
 
-    // Allow all localhost origins in development
-    if (origin.includes('localhost') || origin.includes('127.0.0.1')) {
+    // Allow all localhost origins in development only
+    if (process.env.NODE_ENV !== 'production' && (origin.includes('localhost') || origin.includes('127.0.0.1'))) {
       return callback(null, true);
     }
 
@@ -80,11 +124,12 @@ app.use(cors({
       return callback(null, true);
     }
 
-    // Allow Vercel preview deployments
-    if (origin.includes('vercel.app')) {
+    // Allow Vercel preview deployments (your app's preview URLs)
+    if (origin.includes('vercel.app') && origin.includes('temple-management')) {
       return callback(null, true);
     }
 
+    console.log('❌ CORS blocked origin:', origin);
     callback(new Error('Not allowed by CORS'));
   },
   credentials: true,
@@ -113,34 +158,47 @@ app.get('/health', (req, res) => {
   });
 });
 
-// API Routes
-app.use('/api/users', userRoutes);
-app.use('/api/admin', adminRoutes);
-app.use('/api/communities', communityRoutes); // Basic community CRUD
-app.use('/api/communities', communityFeaturesRoutes); // Members, Applications, Tasks
-app.use('/api', applicationRoutes); // Standalone application routes
-app.use('/api', frontendCompatibleRoutes); // Frontend-compatible routes
-app.use('/api', reportsRoutes); // Reports and calendar routes
-app.use('/api', debugRoutes); // Debug routes for troubleshooting
-app.use('/api/events', eventsWithUploadRoutes); // Events with image upload (must be before legacy)
-// app.use('/api', eventRoutes); // Events management routes (legacy - disabled in favor of eventsWithUpload)
+// =============================================
+// PUBLIC ROUTES (No authentication required)
+// =============================================
+app.use('/api/users', userRoutes); // Has its own auth for protected routes
 app.use('/api/public/events', publicEventsRoutes); // Public events for website
-app.use('/api', taskRoutes); // Tasks management routes
-// app.use('/api/donations', donationRoutes); // Temporarily disabled - MongoDB not connected
-// app.use('/api/expenses', expenseRoutes); // Temporarily disabled - MongoDB not connected
-app.use('/api/volunteers', volunteerRoutes);
-app.use('/api/broadcasts', broadcastRoutes);
-app.use('/api/templates', templateRoutes);
-app.use('/api/pujas', pujaRoutes);
-app.use('/api/finance', financeRoutes);
-app.use('/api/budget-requests', budgetRequestRoutes);
-app.use('/api/budgets', budgetsRoutes);
-app.use('/api/communications', communicationRoutes);
-app.use('/api/donations', donationsRoutes);
-app.use('/api/expenses', expensesRoutes);
-app.use('/api/cms', cmsRoutes);
-app.use('/api/cms/gallery', galleryRoutes);
-app.use('/api/brochures', brochuresRoutes);
+
+// Public CMS endpoints (for main website to fetch banners, pujas, etc.)
+app.get('/api/cms/public/banner', (req, res, next) => cmsRoutes(req, res, next));
+app.get('/api/cms/public/banners', (req, res, next) => cmsRoutes(req, res, next));
+app.get('/api/cms/public/pujas', (req, res, next) => cmsRoutes(req, res, next));
+app.post('/api/cms/contact', (req, res, next) => cmsRoutes(req, res, next)); // Contact form submission
+
+// =============================================
+// PROTECTED ROUTES (Authentication required)
+// =============================================
+app.use('/api/admin', requireAuth, adminRoutes);
+app.use('/api/communities', requireAuth, communityRoutes); // Basic community CRUD
+app.use('/api/communities', requireAuth, communityFeaturesRoutes); // Members, Applications, Tasks
+app.use('/api', requireAuth, applicationRoutes); // Standalone application routes
+app.use('/api', requireAuth, frontendCompatibleRoutes); // Frontend-compatible routes
+app.use('/api', requireAuth, reportsRoutes); // Reports and calendar routes
+app.use('/api/events', requireAuth, eventsWithUploadRoutes); // Events with image upload
+app.use('/api', requireAuth, taskRoutes); // Tasks management routes
+app.use('/api/volunteers', requireAuth, volunteerRoutes);
+app.use('/api/broadcasts', requireAuth, broadcastRoutes);
+app.use('/api/templates', requireAuth, templateRoutes);
+app.use('/api/pujas', requireAuth, pujaRoutes);
+app.use('/api/finance', requireAuth, financeRoutes);
+app.use('/api/budget-requests', requireAuth, budgetRequestRoutes);
+app.use('/api/budgets', requireAuth, budgetsRoutes);
+app.use('/api/communications', requireAuth, communicationRoutes);
+app.use('/api/donations', requireAuth, donationsRoutes);
+app.use('/api/expenses', requireAuth, expensesRoutes);
+app.use('/api/cms', requireAuth, cmsRoutes);
+app.use('/api/cms/gallery', requireAuth, galleryRoutes);
+app.use('/api/brochures', requireAuth, brochuresRoutes);
+
+// Debug routes - only in development
+if (process.env.NODE_ENV !== 'production') {
+  app.use('/api', debugRoutes);
+}
 
 // Temporary schema check endpoint (remove in production)
 // app.use('/api/debug', require('../check-schema-endpoint'));
