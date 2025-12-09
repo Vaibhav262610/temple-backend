@@ -1,7 +1,75 @@
-// backend/src/routes/budgetRequests.js - Budget Request Management
+// backend/src/routes/budgetRequests.js - Budget Request Management with File Upload
 const express = require('express');
 const router = express.Router();
+const multer = require('multer');
+const { createClient } = require('@supabase/supabase-js');
+const { randomUUID } = require('crypto');
+const path = require('path');
 const supabaseService = require('../services/supabaseService');
+
+// Initialize Supabase client for storage
+const supabase = createClient(
+    process.env.SUPABASE_URL,
+    process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_ANON_KEY
+);
+
+// Configure multer for memory storage
+const upload = multer({
+    storage: multer.memoryStorage(),
+    limits: {
+        fileSize: 10 * 1024 * 1024, // 10MB per file
+        files: 5 // Max 5 files
+    },
+    fileFilter: (req, file, cb) => {
+        const allowedTypes = [
+            'image/jpeg', 'image/png', 'image/gif', 'image/webp',
+            'application/pdf',
+            'application/msword',
+            'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+        ];
+        if (allowedTypes.includes(file.mimetype)) {
+            cb(null, true);
+        } else {
+            cb(new Error('Invalid file type. Allowed: images, PDF, DOC, DOCX'), false);
+        }
+    }
+});
+
+// Helper function to upload file to Supabase Storage
+async function uploadToSupabase(file, communityId) {
+    const fileExt = path.extname(file.originalname);
+    const fileName = `${communityId}/${randomUUID()}${fileExt}`;
+    const bucketName = 'budget-documents';
+
+    console.log(`📤 Uploading file to Supabase: ${fileName}`);
+
+    const { data, error } = await supabase.storage
+        .from(bucketName)
+        .upload(fileName, file.buffer, {
+            contentType: file.mimetype,
+            upsert: false
+        });
+
+    if (error) {
+        console.error('❌ Supabase storage upload error:', error);
+        throw error;
+    }
+
+    // Get public URL
+    const { data: urlData } = supabase.storage
+        .from(bucketName)
+        .getPublicUrl(fileName);
+
+    console.log(`✅ File uploaded successfully: ${urlData.publicUrl}`);
+
+    return {
+        name: file.originalname,
+        url: urlData.publicUrl,
+        type: file.mimetype,
+        size: file.size,
+        path: fileName
+    };
+}
 
 // ===== BUDGET REQUESTS ROUTES =====
 
@@ -9,24 +77,7 @@ const supabaseService = require('../services/supabaseService');
 router.get('/', async (req, res) => {
     try {
         const { status = 'all', community_id } = req.query;
-
         console.log('📋 Fetching budget requests');
-
-        // Check if table exists first
-        const { data: tableCheck, error: tableError } = await supabaseService.client
-            .from('budget_requests')
-            .select('id')
-            .limit(1);
-
-        if (tableError && tableError.message.includes('does not exist')) {
-            console.log('⚠️ Budget requests table does not exist yet');
-            return res.json({
-                success: true,
-                data: [],
-                total: 0,
-                message: 'Budget requests table not created yet. Please create the table using MANUAL_TABLE_CREATION.sql first.'
-            });
-        }
 
         let query = supabaseService.client
             .from('budget_requests')
@@ -51,7 +102,6 @@ router.get('/', async (req, res) => {
         const requestsWithCommunity = [];
         if (requests && requests.length > 0) {
             for (const request of requests) {
-                // Fetch community data for each request
                 const { data: communityData } = await supabaseService.client
                     .from('communities')
                     .select('id, name')
@@ -123,20 +173,13 @@ router.get('/community/:communityId', async (req, res) => {
     }
 });
 
-// Create new budget request
+// Create new budget request (JSON - no files)
 router.post('/', async (req, res) => {
     try {
-        const {
-            community_id,
-            budget_amount,
-            purpose,
-            event_name,
-            documents,
-            requested_by
-        } = req.body;
+        console.log('📥 Received budget request (JSON)');
+        console.log('📥 Body:', req.body);
 
-        console.log('💰 Creating budget request for community:', community_id);
-        console.log('📝 Request data:', { budget_amount, purpose, event_name });
+        const { community_id, budget_amount, purpose, event_name, requested_by, documents } = req.body;
 
         // Validate required fields
         if (!community_id || !budget_amount || !purpose) {
@@ -185,13 +228,140 @@ router.post('/', async (req, res) => {
     }
 });
 
+
+// Create new budget request with file upload (multipart/form-data)
+router.post('/with-files', upload.array('documents', 5), async (req, res) => {
+    try {
+        console.log('📥 Received budget request with files');
+        console.log('📥 Body:', req.body);
+        console.log('📎 Files received:', req.files?.length || 0);
+
+        const { community_id, budget_amount, purpose, event_name, requested_by } = req.body;
+
+        // Validate required fields
+        if (!community_id || !budget_amount || !purpose) {
+            return res.status(400).json({
+                success: false,
+                message: 'Missing required fields: community_id, budget_amount, purpose'
+            });
+        }
+
+        // Upload files to Supabase Storage
+        let uploadedDocuments = [];
+        if (req.files && req.files.length > 0) {
+            console.log('📤 Uploading documents to Supabase Storage...');
+            for (const file of req.files) {
+                try {
+                    const uploadedFile = await uploadToSupabase(file, community_id);
+                    uploadedDocuments.push(uploadedFile);
+                } catch (uploadError) {
+                    console.error('❌ File upload failed:', uploadError.message);
+                }
+            }
+            console.log(`✅ Uploaded ${uploadedDocuments.length} documents`);
+        }
+
+        const requestData = {
+            community_id,
+            budget_amount: parseFloat(budget_amount),
+            purpose,
+            event_name: event_name || null,
+            documents: uploadedDocuments,
+            requested_by: requested_by || null,
+            status: 'pending',
+            created_at: new Date().toISOString()
+        };
+
+        const { data: request, error } = await supabaseService.client
+            .from('budget_requests')
+            .insert(requestData)
+            .select('*')
+            .single();
+
+        if (error) {
+            console.error('❌ Supabase budget request creation error:', error);
+            throw error;
+        }
+
+        console.log('✅ Budget request created successfully:', request.id);
+
+        res.status(201).json({
+            success: true,
+            data: request,
+            message: 'Budget request submitted successfully'
+        });
+    } catch (error) {
+        console.error('❌ Error creating budget request:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to create budget request',
+            error: error.message
+        });
+    }
+});
+
+// Upload documents to existing budget request
+router.post('/:requestId/documents', upload.array('documents', 5), async (req, res) => {
+    try {
+        const { requestId } = req.params;
+        console.log('📎 Adding documents to budget request:', requestId);
+
+        const { data: existingRequest, error: fetchError } = await supabaseService.client
+            .from('budget_requests')
+            .select('*')
+            .eq('id', requestId)
+            .single();
+
+        if (fetchError || !existingRequest) {
+            return res.status(404).json({
+                success: false,
+                message: 'Budget request not found'
+            });
+        }
+
+        let uploadedDocuments = [];
+        if (req.files && req.files.length > 0) {
+            for (const file of req.files) {
+                try {
+                    const uploadedFile = await uploadToSupabase(file, existingRequest.community_id);
+                    uploadedDocuments.push(uploadedFile);
+                } catch (uploadError) {
+                    console.error('❌ File upload failed:', uploadError.message);
+                }
+            }
+        }
+
+        const allDocuments = [...(existingRequest.documents || []), ...uploadedDocuments];
+
+        const { data: request, error } = await supabaseService.client
+            .from('budget_requests')
+            .update({ documents: allDocuments, updated_at: new Date().toISOString() })
+            .eq('id', requestId)
+            .select('*')
+            .single();
+
+        if (error) throw error;
+
+        res.json({
+            success: true,
+            data: request,
+            message: `${uploadedDocuments.length} document(s) uploaded successfully`
+        });
+    } catch (error) {
+        console.error('❌ Error uploading documents:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to upload documents',
+            error: error.message
+        });
+    }
+});
+
 // Approve budget request
 router.put('/:requestId/approve', async (req, res) => {
     try {
         const { requestId } = req.params;
         const { approved_by, approval_notes, approved_amount } = req.body;
-
-        console.log('✅ Approving budget request:', requestId);
 
         const updateData = {
             status: 'approved',
@@ -209,32 +379,15 @@ router.put('/:requestId/approve', async (req, res) => {
             .select('*')
             .single();
 
-        if (error) {
-            console.error('❌ Supabase budget request approval error:', error);
-            throw error;
-        }
-
+        if (error) throw error;
         if (!request) {
-            return res.status(404).json({
-                success: false,
-                message: 'Budget request not found'
-            });
+            return res.status(404).json({ success: false, message: 'Budget request not found' });
         }
 
-        console.log('✅ Budget request approved successfully:', requestId);
-
-        res.json({
-            success: true,
-            data: request,
-            message: 'Budget request approved successfully'
-        });
+        res.json({ success: true, data: request, message: 'Budget request approved successfully' });
     } catch (error) {
         console.error('❌ Error approving budget request:', error);
-        res.status(500).json({
-            success: false,
-            message: 'Failed to approve budget request',
-            error: error.message
-        });
+        res.status(500).json({ success: false, message: 'Failed to approve budget request', error: error.message });
     }
 });
 
@@ -243,8 +396,6 @@ router.put('/:requestId/reject', async (req, res) => {
     try {
         const { requestId } = req.params;
         const { rejected_by, rejection_reason } = req.body;
-
-        console.log('❌ Rejecting budget request:', requestId);
 
         const updateData = {
             status: 'rejected',
@@ -261,32 +412,15 @@ router.put('/:requestId/reject', async (req, res) => {
             .select('*')
             .single();
 
-        if (error) {
-            console.error('❌ Supabase budget request rejection error:', error);
-            throw error;
-        }
-
+        if (error) throw error;
         if (!request) {
-            return res.status(404).json({
-                success: false,
-                message: 'Budget request not found'
-            });
+            return res.status(404).json({ success: false, message: 'Budget request not found' });
         }
 
-        console.log('✅ Budget request rejected successfully:', requestId);
-
-        res.json({
-            success: true,
-            data: request,
-            message: 'Budget request rejected successfully'
-        });
+        res.json({ success: true, data: request, message: 'Budget request rejected successfully' });
     } catch (error) {
         console.error('❌ Error rejecting budget request:', error);
-        res.status(500).json({
-            success: false,
-            message: 'Failed to reject budget request',
-            error: error.message
-        });
+        res.status(500).json({ success: false, message: 'Failed to reject budget request', error: error.message });
     }
 });
 
@@ -295,8 +429,6 @@ router.delete('/:requestId', async (req, res) => {
     try {
         const { requestId } = req.params;
 
-        console.log('🗑️ Deleting budget request:', requestId);
-
         const { data: request, error } = await supabaseService.client
             .from('budget_requests')
             .delete()
@@ -304,32 +436,15 @@ router.delete('/:requestId', async (req, res) => {
             .select('*')
             .single();
 
-        if (error) {
-            console.error('❌ Supabase budget request delete error:', error);
-            throw error;
-        }
-
+        if (error) throw error;
         if (!request) {
-            return res.status(404).json({
-                success: false,
-                message: 'Budget request not found'
-            });
+            return res.status(404).json({ success: false, message: 'Budget request not found' });
         }
 
-        console.log('✅ Budget request deleted successfully:', requestId);
-
-        res.json({
-            success: true,
-            data: request,
-            message: 'Budget request deleted successfully'
-        });
+        res.json({ success: true, data: request, message: 'Budget request deleted successfully' });
     } catch (error) {
         console.error('❌ Error deleting budget request:', error);
-        res.status(500).json({
-            success: false,
-            message: 'Failed to delete budget request',
-            error: error.message
-        });
+        res.status(500).json({ success: false, message: 'Failed to delete budget request', error: error.message });
     }
 });
 

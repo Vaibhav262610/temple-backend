@@ -32,6 +32,7 @@ const expensesRoutes = require('./routes/expenses');
 const cmsRoutes = require('./routes/cms');
 const galleryRoutes = require('./routes/gallery');
 const brochuresRoutes = require('./routes/brochures');
+const priestsRoutes = require('./routes/priests');
 
 // Import auth middleware
 const { requireAuth } = require('./middleware/authMiddleware');
@@ -56,35 +57,7 @@ app.use(helmet({
 app.use(compression());
 app.use(morgan('combined'));
 
-// Rate limiting - prevent abuse
-const generalLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // Limit each IP to 100 requests per window
-  message: {
-    success: false,
-    message: 'Too many requests, please try again later.'
-  },
-  standardHeaders: true,
-  legacyHeaders: false,
-});
-
-// Stricter rate limit for auth routes
-const authLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 10, // Limit each IP to 10 login attempts per window
-  message: {
-    success: false,
-    message: 'Too many login attempts, please try again after 15 minutes.'
-  },
-  standardHeaders: true,
-  legacyHeaders: false,
-});
-
-// Apply rate limiting
-app.use('/api', generalLimiter);
-app.use('/api/users/login', authLimiter);
-app.use('/api/users/register', authLimiter);
-// CORS configuration - allow both production and development origins
+// CORS configuration - MUST be before rate limiting to handle preflight requests
 const allowedOrigins = [
   // Production
   'https://temple-management-cms.vercel.app',
@@ -125,11 +98,46 @@ app.use(cors({
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin'],
-  exposedHeaders: ['Content-Length', 'X-Request-Id'],
+  exposedHeaders: ['Content-Length', 'X-Reques                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         t-Id'],
   maxAge: 86400 // 24 hours
 }));
+
+// Handle preflight requests explicitly
+app.options('*', cors());
+
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+
+// Rate limiting - prevent abuse (after CORS)
+const generalLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: process.env.NODE_ENV === 'production' ? 500 : 1000, // Higher limits
+  message: {
+    success: false,
+    message: 'Too many requests, please try again later.'
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: (req) => req.method === 'OPTIONS', // Skip preflight requests
+});
+
+// Stricter rate limit for auth routes
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: process.env.NODE_ENV === 'production' ? 20 : 100, // Higher for dev
+  message: {
+    success: false,
+    message: 'Too many login attempts, please try again after 15 minutes.'
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: (req) => req.method === 'OPTIONS', // Skip preflight requests
+});
+
+// Apply rate limiting
+app.use('/api', generalLimiter);
+app.use('/api/users/login', authLimiter);
+app.use('/api/users/register', authLimiter);
 
 // Health check endpoint
 app.get('/health', (req, res) => {
@@ -184,6 +192,7 @@ app.use('/api/expenses', requireAuth, expensesRoutes);
 app.use('/api/cms', requireAuth, cmsRoutes);
 app.use('/api/cms/gallery', requireAuth, galleryRoutes);
 app.use('/api/brochures', requireAuth, brochuresRoutes);
+app.use('/api/priests', requireAuth, priestsRoutes);
 
 // Debug routes - only in development
 if (process.env.NODE_ENV !== 'production') {

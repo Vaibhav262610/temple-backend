@@ -351,14 +351,14 @@ class HybridCommunityService {
           console.log('⚠️ Could not fetch events count:', err.message);
         }
 
-        // Fetch pending tasks count
+        // Fetch pending tasks count from community_tasks table
         let pendingTasks = 0;
         try {
           const { count } = await supabaseService.client
-            .from('tasks')
+            .from('community_tasks')
             .select('*', { count: 'exact', head: true })
             .eq('community_id', id)
-            .in('status', ['todo', 'in_progress']);
+            .in('status', ['todo', 'in_progress', 'in-progress']);
           pendingTasks = count || 0;
         } catch (err) {
           console.log('⚠️ Could not fetch tasks count:', err.message);
