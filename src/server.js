@@ -50,6 +50,9 @@ require('./models/CommunityAnnouncement');
 const app = express();
 const PORT = process.env.PORT || 5000;
 
+// Trust proxy for Railway/Vercel deployments (required for rate limiting behind reverse proxy)
+app.set('trust proxy', 1);
+
 // Middleware
 app.use(helmet({
   crossOriginResourcePolicy: { policy: "cross-origin" }
