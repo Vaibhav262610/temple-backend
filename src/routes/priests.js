@@ -162,7 +162,7 @@ router.post('/', upload.single('image'), async (req, res) => {
             console.log('✅ Priest image uploaded:', publicUrl);
         }
 
-        // Insert priest record
+        // Insert priest record (without created_by to avoid FK constraint issues)
         const { data, error } = await supabase
             .from('priests')
             .insert({
@@ -178,8 +178,7 @@ router.post('/', upload.single('image'), async (req, res) => {
                 status,
                 notes: notes || null,
                 image_url: imageUrl,
-                storage_path: storagePath,
-                created_by: req.user?.id || null
+                storage_path: storagePath
             })
             .select()
             .single();

@@ -1,7 +1,10 @@
 -- Create priests table for storing priest information
 -- Run this SQL in your Supabase Dashboard SQL Editor
 
-CREATE TABLE IF NOT EXISTS priests (
+-- Drop existing table if it has wrong constraints
+DROP TABLE IF EXISTS priests;
+
+CREATE TABLE priests (
     id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
     name VARCHAR(255) NOT NULL,
     email VARCHAR(255),
@@ -16,7 +19,7 @@ CREATE TABLE IF NOT EXISTS priests (
     notes TEXT,
     image_url TEXT,
     storage_path VARCHAR(500),
-    created_by UUID REFERENCES auth.users(id),
+    created_by UUID,  -- No foreign key constraint
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
