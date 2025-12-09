@@ -169,6 +169,9 @@ app.use('/api/public/events', publicEventsRoutes); // Public events for website
 app.get('/api/cms/public/banner', (req, res, next) => cmsRoutes(req, res, next));
 app.get('/api/cms/public/banners', (req, res, next) => cmsRoutes(req, res, next));
 app.get('/api/cms/public/pujas', (req, res, next) => cmsRoutes(req, res, next));
+app.get('/api/cms/public/sai-aangan', (req, res, next) => cmsRoutes(req, res, next));
+app.get('/api/cms/public/upcoming-events', (req, res, next) => cmsRoutes(req, res, next));
+app.get('/api/cms/public/mandir-hours', (req, res, next) => cmsRoutes(req, res, next));
 app.post('/api/cms/contact', (req, res, next) => cmsRoutes(req, res, next)); // Contact form submission
 
 // =============================================

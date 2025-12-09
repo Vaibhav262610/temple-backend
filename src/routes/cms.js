@@ -795,4 +795,375 @@ router.delete('/about-mandir/:id', async (req, res) => {
     }
 });
 
+// =============================================
+// SAI AANGAN (Mandir Expansion) ROUTES
+// =============================================
+router.get('/sai-aangan', async (req, res) => {
+    try {
+        const { data, error } = await supabaseService.client
+            .from('cms_sai_aangan')
+            .select('*')
+            .order('display_order', { ascending: true });
+
+        if (error) throw error;
+        res.json({ success: true, data: data || [] });
+    } catch (error) {
+        console.error('Error fetching sai aangan:', error);
+        res.status(500).json({ success: false, message: error.message });
+    }
+});
+
+router.post('/sai-aangan', upload.single('image'), async (req, res) => {
+    try {
+        let imageUrl = req.body.image_url || '';
+
+        if (req.file) {
+            const fileExt = path.extname(req.file.originalname);
+            const fileName = `sai-aangan/${randomUUID()}${fileExt}`;
+
+            const { error: uploadError } = await supabaseService.client.storage
+                .from('gallery-images')
+                .upload(fileName, req.file.buffer, {
+                    contentType: req.file.mimetype,
+                    upsert: false
+                });
+
+            if (uploadError) throw uploadError;
+
+            const { data: { publicUrl } } = supabaseService.client.storage
+                .from('gallery-images')
+                .getPublicUrl(fileName);
+
+            imageUrl = publicUrl;
+        }
+
+        let timelineUpdates = req.body.timeline_updates;
+        if (typeof timelineUpdates === 'string') {
+            try { timelineUpdates = JSON.parse(timelineUpdates); } catch { timelineUpdates = []; }
+        }
+
+        const { data, error } = await supabaseService.client
+            .from('cms_sai_aangan')
+            .insert({
+                title: req.body.title,
+                description: req.body.description || '',
+                image_url: imageUrl,
+                timeline_updates: timelineUpdates || [],
+                donation_link: req.body.donation_link || '',
+                display_order: parseInt(req.body.display_order) || 0,
+                is_active: req.body.is_active !== 'false'
+            })
+            .select('*')
+            .single();
+
+        if (error) throw error;
+        res.status(201).json({ success: true, data, message: 'Sai Aangan project created' });
+    } catch (error) {
+        console.error('Error creating sai aangan:', error);
+        res.status(500).json({ success: false, message: error.message });
+    }
+});
+
+router.put('/sai-aangan/:id', upload.single('image'), async (req, res) => {
+    try {
+        const { id } = req.params;
+        let imageUrl = req.body.image_url;
+
+        if (req.file) {
+            const fileExt = path.extname(req.file.originalname);
+            const fileName = `sai-aangan/${randomUUID()}${fileExt}`;
+
+            const { error: uploadError } = await supabaseService.client.storage
+                .from('gallery-images')
+                .upload(fileName, req.file.buffer, {
+                    contentType: req.file.mimetype,
+                    upsert: false
+                });
+
+            if (uploadError) throw uploadError;
+
+            const { data: { publicUrl } } = supabaseService.client.storage
+                .from('gallery-images')
+                .getPublicUrl(fileName);
+
+            imageUrl = publicUrl;
+        }
+
+        let timelineUpdates = req.body.timeline_updates;
+        if (typeof timelineUpdates === 'string') {
+            try { timelineUpdates = JSON.parse(timelineUpdates); } catch { timelineUpdates = []; }
+        }
+
+        const updateData = {
+            title: req.body.title,
+            description: req.body.description || '',
+            timeline_updates: timelineUpdates || [],
+            donation_link: req.body.donation_link || '',
+            display_order: parseInt(req.body.display_order) || 0,
+            is_active: req.body.is_active !== 'false',
+            updated_at: new Date().toISOString()
+        };
+
+        if (imageUrl) updateData.image_url = imageUrl;
+
+        const { data, error } = await supabaseService.client
+            .from('cms_sai_aangan')
+            .update(updateData)
+            .eq('id', id)
+            .select('*')
+            .single();
+
+        if (error) throw error;
+        res.json({ success: true, data, message: 'Sai Aangan project updated' });
+    } catch (error) {
+        console.error('Error updating sai aangan:', error);
+        res.status(500).json({ success: false, message: error.message });
+    }
+});
+
+router.delete('/sai-aangan/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { error } = await supabaseService.client
+            .from('cms_sai_aangan')
+            .delete()
+            .eq('id', id);
+
+        if (error) throw error;
+        res.json({ success: true, message: 'Sai Aangan project deleted' });
+    } catch (error) {
+        console.error('Error deleting sai aangan:', error);
+        res.status(500).json({ success: false, message: error.message });
+    }
+});
+
+router.get('/public/sai-aangan', async (req, res) => {
+    try {
+        const { data, error } = await supabaseService.client
+            .from('cms_sai_aangan')
+            .select('*')
+            .eq('is_active', true)
+            .order('display_order', { ascending: true });
+
+        if (error) throw error;
+        res.json({ success: true, data: data || [] });
+    } catch (error) {
+        console.error('Error fetching public sai aangan:', error);
+        res.status(500).json({ success: false, message: error.message });
+    }
+});
+
+// =============================================
+// UPCOMING EVENTS ROUTES
+// =============================================
+router.get('/upcoming-events', async (req, res) => {
+    try {
+        const { data, error } = await supabaseService.client
+            .from('cms_upcoming_events')
+            .select('*')
+            .order('event_date', { ascending: true });
+
+        if (error) throw error;
+        res.json({ success: true, data: data || [] });
+    } catch (error) {
+        console.error('Error fetching upcoming events:', error);
+        res.status(500).json({ success: false, message: error.message });
+    }
+});
+
+router.post('/upcoming-events', async (req, res) => {
+    try {
+        const { data, error } = await supabaseService.client
+            .from('cms_upcoming_events')
+            .insert({
+                event_name: req.body.event_name,
+                event_date: req.body.event_date,
+                day_of_week: req.body.day_of_week || '',
+                time_details: req.body.time_details || '',
+                description: req.body.description || '',
+                details_link: req.body.details_link || '',
+                display_order: parseInt(req.body.display_order) || 0,
+                is_active: req.body.is_active !== false
+            })
+            .select('*')
+            .single();
+
+        if (error) throw error;
+        res.status(201).json({ success: true, data, message: 'Event created' });
+    } catch (error) {
+        console.error('Error creating upcoming event:', error);
+        res.status(500).json({ success: false, message: error.message });
+    }
+});
+
+router.put('/upcoming-events/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { data, error } = await supabaseService.client
+            .from('cms_upcoming_events')
+            .update({
+                event_name: req.body.event_name,
+                event_date: req.body.event_date,
+                day_of_week: req.body.day_of_week || '',
+                time_details: req.body.time_details || '',
+                description: req.body.description || '',
+                details_link: req.body.details_link || '',
+                display_order: parseInt(req.body.display_order) || 0,
+                is_active: req.body.is_active !== false,
+                updated_at: new Date().toISOString()
+            })
+            .eq('id', id)
+            .select('*')
+            .single();
+
+        if (error) throw error;
+        res.json({ success: true, data, message: 'Event updated' });
+    } catch (error) {
+        console.error('Error updating upcoming event:', error);
+        res.status(500).json({ success: false, message: error.message });
+    }
+});
+
+router.delete('/upcoming-events/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { error } = await supabaseService.client
+            .from('cms_upcoming_events')
+            .delete()
+            .eq('id', id);
+
+        if (error) throw error;
+        res.json({ success: true, message: 'Event deleted' });
+    } catch (error) {
+        console.error('Error deleting upcoming event:', error);
+        res.status(500).json({ success: false, message: error.message });
+    }
+});
+
+router.get('/public/upcoming-events', async (req, res) => {
+    try {
+        const { data, error } = await supabaseService.client
+            .from('cms_upcoming_events')
+            .select('*')
+            .eq('is_active', true)
+            .gte('event_date', new Date().toISOString().split('T')[0])
+            .order('event_date', { ascending: true });
+
+        if (error) throw error;
+        res.json({ success: true, data: data || [] });
+    } catch (error) {
+        console.error('Error fetching public upcoming events:', error);
+        res.status(500).json({ success: false, message: error.message });
+    }
+});
+
+// =============================================
+// MANDIR HOURS & AARTI TIMES ROUTES
+// =============================================
+router.get('/mandir-hours', async (req, res) => {
+    try {
+        const { data, error } = await supabaseService.client
+            .from('cms_mandir_hours')
+            .select('*')
+            .order('display_order', { ascending: true });
+
+        if (error) throw error;
+        res.json({ success: true, data: data || [] });
+    } catch (error) {
+        console.error('Error fetching mandir hours:', error);
+        res.status(500).json({ success: false, message: error.message });
+    }
+});
+
+router.post('/mandir-hours', async (req, res) => {
+    try {
+        let timings = req.body.timings;
+        if (typeof timings === 'string') {
+            try { timings = JSON.parse(timings); } catch { timings = []; }
+        }
+
+        const { data, error } = await supabaseService.client
+            .from('cms_mandir_hours')
+            .insert({
+                section_type: req.body.section_type,
+                title: req.body.title || '',
+                description: req.body.description || '',
+                timings: timings || [],
+                display_order: parseInt(req.body.display_order) || 0,
+                is_active: req.body.is_active !== false
+            })
+            .select('*')
+            .single();
+
+        if (error) throw error;
+        res.status(201).json({ success: true, data, message: 'Mandir hours created' });
+    } catch (error) {
+        console.error('Error creating mandir hours:', error);
+        res.status(500).json({ success: false, message: error.message });
+    }
+});
+
+router.put('/mandir-hours/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        let timings = req.body.timings;
+        if (typeof timings === 'string') {
+            try { timings = JSON.parse(timings); } catch { timings = []; }
+        }
+
+        const { data, error } = await supabaseService.client
+            .from('cms_mandir_hours')
+            .update({
+                section_type: req.body.section_type,
+                title: req.body.title || '',
+                description: req.body.description || '',
+                timings: timings || [],
+                display_order: parseInt(req.body.display_order) || 0,
+                is_active: req.body.is_active !== false,
+                updated_at: new Date().toISOString()
+            })
+            .eq('id', id)
+            .select('*')
+            .single();
+
+        if (error) throw error;
+        res.json({ success: true, data, message: 'Mandir hours updated' });
+    } catch (error) {
+        console.error('Error updating mandir hours:', error);
+        res.status(500).json({ success: false, message: error.message });
+    }
+});
+
+router.delete('/mandir-hours/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { error } = await supabaseService.client
+            .from('cms_mandir_hours')
+            .delete()
+            .eq('id', id);
+
+        if (error) throw error;
+        res.json({ success: true, message: 'Mandir hours deleted' });
+    } catch (error) {
+        console.error('Error deleting mandir hours:', error);
+        res.status(500).json({ success: false, message: error.message });
+    }
+});
+
+router.get('/public/mandir-hours', async (req, res) => {
+    try {
+        const { data, error } = await supabaseService.client
+            .from('cms_mandir_hours')
+            .select('*')
+            .eq('is_active', true)
+            .order('display_order', { ascending: true });
+
+        if (error) throw error;
+        res.json({ success: true, data: data || [] });
+    } catch (error) {
+        console.error('Error fetching public mandir hours:', error);
+        res.status(500).json({ success: false, message: error.message });
+    }
+});
+
 module.exports = router;
