@@ -520,7 +520,6 @@ router.post('/pujas', upload.single('image'), async (req, res) => {
             description: req.body.description || '',
             short_description: req.body.short_description || '',
             image_url: imageUrl,
-            storage_path: storagePath,
             price: parseFloat(req.body.price) || 0,
             price_display: req.body.price_display || '',
             duration: req.body.duration || '',
@@ -536,17 +535,29 @@ router.post('/pujas', upload.single('image'), async (req, res) => {
             display_order: parseInt(req.body.display_order) || 0,
         };
 
+        // Only add storage_path if we have one (column may not exist in older tables)
+        if (storagePath) {
+            pujaData.storage_path = storagePath;
+        }
+
+        console.log('📝 Creating puja with data:', JSON.stringify(pujaData, null, 2));
+
         const { data, error } = await supabaseService.client
             .from('cms_pujas')
             .insert(pujaData)
             .select('*')
             .single();
 
-        if (error) throw error;
+        if (error) {
+            console.error('❌ Database insert error:', error);
+            throw error;
+        }
+
+        console.log('✅ Puja created successfully:', data?.id);
         res.status(201).json({ success: true, data, message: 'Puja created successfully' });
     } catch (error) {
         console.error('Error creating CMS puja:', error);
-        res.status(500).json({ success: false, message: error.message });
+        res.status(500).json({ success: false, message: error.message, error: error.message });
     }
 });
 
@@ -619,7 +630,10 @@ router.put('/pujas/:id', upload.single('image'), async (req, res) => {
         };
 
         if (imageUrl !== undefined) updateData.image_url = imageUrl;
-        if (storagePath) updateData.storage_path = storagePath;
+        // Only update storage_path if we have a new one from file upload
+        // Skip if column doesn't exist in table
+
+        console.log('📝 Updating puja with data:', JSON.stringify(updateData, null, 2));
 
         const { data, error } = await supabaseService.client
             .from('cms_pujas')
@@ -628,11 +642,16 @@ router.put('/pujas/:id', upload.single('image'), async (req, res) => {
             .select('*')
             .single();
 
-        if (error) throw error;
+        if (error) {
+            console.error('❌ Database update error:', error);
+            throw error;
+        }
+
+        console.log('✅ Puja updated successfully:', data?.id);
         res.json({ success: true, data, message: 'Puja updated successfully' });
     } catch (error) {
         console.error('Error updating CMS puja:', error);
-        res.status(500).json({ success: false, message: error.message });
+        res.status(500).json({ success: false, message: error.message, error: error.message });
     }
 });
 
