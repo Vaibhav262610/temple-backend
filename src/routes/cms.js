@@ -2,6 +2,23 @@
 const express = require('express');
 const router = express.Router();
 const supabaseService = require('../services/supabaseService');
+const multer = require('multer');
+const { randomUUID } = require('crypto');
+const path = require('path');
+
+// Configure multer for memory storage (for puja images)
+const upload = multer({
+    storage: multer.memoryStorage(),
+    limits: {
+        fileSize: 5 * 1024 * 1024, // 5MB limit
+    },
+    fileFilter: (req, file, cb) => {
+        if (!file.mimetype.startsWith('image/')) {
+            return cb(new Error('Only image files are allowed!'), false);
+        }
+        cb(null, true);
+    },
+});
 
 // =============================================
 // BANNER ROUTES (single link)
@@ -418,7 +435,7 @@ router.patch('/contact/:id/read', async (req, res) => {
 });
 
 // =============================================
-// CMS PUJAS ROUTES
+// CMS PUJAS ROUTES (with image upload support)
 // =============================================
 router.get('/pujas', async (req, res) => {
     try {
@@ -452,11 +469,76 @@ router.get('/pujas/:id', async (req, res) => {
     }
 });
 
-router.post('/pujas', async (req, res) => {
+// POST create puja with optional image upload
+router.post('/pujas', upload.single('image'), async (req, res) => {
     try {
+        let imageUrl = req.body.image_url || '';
+        let storagePath = '';
+
+        // Handle image upload if file is provided
+        if (req.file) {
+            const fileExt = path.extname(req.file.originalname);
+            const fileName = `pujas/${randomUUID()}${fileExt}`;
+
+            console.log('📤 Uploading puja image to Supabase Storage:', fileName);
+
+            const { data: uploadData, error: uploadError } = await supabaseService.client.storage
+                .from('gallery-images')
+                .upload(fileName, req.file.buffer, {
+                    contentType: req.file.mimetype,
+                    upsert: false
+                });
+
+            if (uploadError) {
+                console.error('❌ Supabase upload error:', uploadError);
+                throw uploadError;
+            }
+
+            const { data: { publicUrl } } = supabaseService.client.storage
+                .from('gallery-images')
+                .getPublicUrl(fileName);
+
+            imageUrl = publicUrl;
+            storagePath = fileName;
+            console.log('✅ Puja image uploaded:', publicUrl);
+        }
+
+        // Parse JSON fields if they're strings
+        let benefits = req.body.benefits;
+        let itemsIncluded = req.body.items_included;
+
+        if (typeof benefits === 'string') {
+            try { benefits = JSON.parse(benefits); } catch { benefits = []; }
+        }
+        if (typeof itemsIncluded === 'string') {
+            try { itemsIncluded = JSON.parse(itemsIncluded); } catch { itemsIncluded = []; }
+        }
+
+        const pujaData = {
+            name: req.body.name,
+            slug: req.body.slug,
+            description: req.body.description || '',
+            short_description: req.body.short_description || '',
+            image_url: imageUrl,
+            storage_path: storagePath,
+            price: parseFloat(req.body.price) || 0,
+            price_display: req.body.price_display || '',
+            duration: req.body.duration || '',
+            location: req.body.location || '',
+            priest_name: req.body.priest_name || '',
+            category: req.body.category || 'General Puja',
+            benefits: benefits || [],
+            items_included: itemsIncluded || [],
+            booking_required: req.body.booking_required === 'true' || req.body.booking_required === true,
+            advance_booking_days: parseInt(req.body.advance_booking_days) || 0,
+            is_featured: req.body.is_featured === 'true' || req.body.is_featured === true,
+            is_active: req.body.is_active !== 'false' && req.body.is_active !== false,
+            display_order: parseInt(req.body.display_order) || 0,
+        };
+
         const { data, error } = await supabaseService.client
             .from('cms_pujas')
-            .insert(req.body)
+            .insert(pujaData)
             .select('*')
             .single();
 
@@ -468,15 +550,80 @@ router.post('/pujas', async (req, res) => {
     }
 });
 
-router.put('/pujas/:id', async (req, res) => {
+// PUT update puja with optional image upload
+router.put('/pujas/:id', upload.single('image'), async (req, res) => {
     try {
         const { id } = req.params;
+        let imageUrl = req.body.image_url;
+        let storagePath = req.body.storage_path || '';
+
+        // Handle new image upload if file is provided
+        if (req.file) {
+            // Delete old image if exists
+            if (req.body.storage_path) {
+                await supabaseService.client.storage
+                    .from('gallery-images')
+                    .remove([req.body.storage_path]);
+            }
+
+            const fileExt = path.extname(req.file.originalname);
+            const fileName = `pujas/${randomUUID()}${fileExt}`;
+
+            const { data: uploadData, error: uploadError } = await supabaseService.client.storage
+                .from('gallery-images')
+                .upload(fileName, req.file.buffer, {
+                    contentType: req.file.mimetype,
+                    upsert: false
+                });
+
+            if (uploadError) throw uploadError;
+
+            const { data: { publicUrl } } = supabaseService.client.storage
+                .from('gallery-images')
+                .getPublicUrl(fileName);
+
+            imageUrl = publicUrl;
+            storagePath = fileName;
+        }
+
+        // Parse JSON fields if they're strings
+        let benefits = req.body.benefits;
+        let itemsIncluded = req.body.items_included;
+
+        if (typeof benefits === 'string') {
+            try { benefits = JSON.parse(benefits); } catch { benefits = []; }
+        }
+        if (typeof itemsIncluded === 'string') {
+            try { itemsIncluded = JSON.parse(itemsIncluded); } catch { itemsIncluded = []; }
+        }
+
+        const updateData = {
+            name: req.body.name,
+            slug: req.body.slug,
+            description: req.body.description || '',
+            short_description: req.body.short_description || '',
+            price: parseFloat(req.body.price) || 0,
+            price_display: req.body.price_display || '',
+            duration: req.body.duration || '',
+            location: req.body.location || '',
+            priest_name: req.body.priest_name || '',
+            category: req.body.category || 'General Puja',
+            benefits: benefits || [],
+            items_included: itemsIncluded || [],
+            booking_required: req.body.booking_required === 'true' || req.body.booking_required === true,
+            advance_booking_days: parseInt(req.body.advance_booking_days) || 0,
+            is_featured: req.body.is_featured === 'true' || req.body.is_featured === true,
+            is_active: req.body.is_active !== 'false' && req.body.is_active !== false,
+            display_order: parseInt(req.body.display_order) || 0,
+            updated_at: new Date().toISOString()
+        };
+
+        if (imageUrl !== undefined) updateData.image_url = imageUrl;
+        if (storagePath) updateData.storage_path = storagePath;
+
         const { data, error } = await supabaseService.client
             .from('cms_pujas')
-            .update({
-                ...req.body,
-                updated_at: new Date().toISOString()
-            })
+            .update(updateData)
             .eq('id', id)
             .select('*')
             .single();
@@ -489,9 +636,28 @@ router.put('/pujas/:id', async (req, res) => {
     }
 });
 
+// DELETE puja (also deletes image from storage)
 router.delete('/pujas/:id', async (req, res) => {
     try {
         const { id } = req.params;
+
+        // Get puja to find storage_path
+        const { data: puja, error: fetchError } = await supabaseService.client
+            .from('cms_pujas')
+            .select('storage_path')
+            .eq('id', id)
+            .single();
+
+        if (fetchError && fetchError.code !== 'PGRST116') throw fetchError;
+
+        // Delete image from storage if exists
+        if (puja?.storage_path) {
+            await supabaseService.client.storage
+                .from('gallery-images')
+                .remove([puja.storage_path]);
+            console.log('✅ Deleted puja image from storage');
+        }
+
         const { error } = await supabaseService.client
             .from('cms_pujas')
             .delete()
