@@ -160,6 +160,55 @@ router.delete('/:id', async (req, res) => {
     }
 });
 
+// Get busy priests for a specific date and time
+router.get('/busy-priests/:date', async (req, res) => {
+    try {
+        const { date } = req.params;
+        const { time, exclude_booking_id } = req.query;
+
+        // Find all confirmed/pending bookings for this date
+        let query = supabase
+            .from('priest_bookings')
+            .select('priest_id, preferred_time, id')
+            .eq('preferred_date', date)
+            .not('priest_id', 'is', null)
+            .in('status', ['pending', 'confirmed']);
+
+        // Exclude current booking when editing
+        if (exclude_booking_id) {
+            query = query.neq('id', exclude_booking_id);
+        }
+
+        const { data, error } = await query;
+
+        if (error) throw error;
+
+        // Create a map of busy priests with their booking times
+        const busyPriests = {};
+        (data || []).forEach(booking => {
+            if (booking.priest_id) {
+                if (!busyPriests[booking.priest_id]) {
+                    busyPriests[booking.priest_id] = [];
+                }
+                busyPriests[booking.priest_id].push(booking.preferred_time || 'All day');
+            }
+        });
+
+        res.json({
+            success: true,
+            data: busyPriests
+        });
+
+    } catch (error) {
+        console.error('❌ Error fetching busy priests:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to fetch busy priests',
+            error: error.message
+        });
+    }
+});
+
 // Get booking statistics
 router.get('/stats/summary', async (req, res) => {
     try {
