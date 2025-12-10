@@ -168,6 +168,7 @@ app.use('/api/public/events', publicEventsRoutes); // Public events for website
 // Public CMS endpoints (for main website to fetch banners, pujas, etc.)
 app.get('/api/cms/public/banner', (req, res, next) => cmsRoutes(req, res, next));
 app.get('/api/cms/public/banners', (req, res, next) => cmsRoutes(req, res, next));
+app.get('/api/cms/public/banner/:slot', (req, res, next) => cmsRoutes(req, res, next)); // Individual banner slots
 app.get('/api/cms/public/pujas', (req, res, next) => cmsRoutes(req, res, next));
 app.get('/api/cms/public/sai-aangan', (req, res, next) => cmsRoutes(req, res, next));
 app.get('/api/cms/public/upcoming-events', (req, res, next) => cmsRoutes(req, res, next));

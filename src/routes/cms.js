@@ -261,6 +261,46 @@ router.get('/public/banners', async (req, res) => {
     }
 });
 
+// PUBLIC ENDPOINT: Get individual banner by slot (banner-1, banner-2, banner-3, banner-4)
+router.get('/public/banner/:slot', async (req, res) => {
+    try {
+        const { slot } = req.params;
+        const validSlots = ['banner-1', 'banner-2', 'banner-3', 'banner-4'];
+
+        if (!validSlots.includes(slot)) {
+            return res.status(400).json({
+                success: false,
+                message: 'Invalid banner slot. Use banner-1, banner-2, banner-3, or banner-4'
+            });
+        }
+
+        console.log(`📸 Fetching ${slot}`);
+
+        const { data, error } = await supabaseService.client
+            .from('cms_images')
+            .select('*')
+            .eq('name', slot)
+            .eq('is_active', true)
+            .single();
+
+        if (error && error.code !== 'PGRST116') throw error;
+
+        if (!data) {
+            return res.json({
+                success: true,
+                data: null,
+                message: `No active banner found for ${slot}`
+            });
+        }
+
+        console.log(`✅ Found ${slot}`);
+        res.json({ success: true, data });
+    } catch (error) {
+        console.error('❌ Error fetching banner:', error);
+        res.status(500).json({ success: false, message: error.message });
+    }
+});
+
 // POST create image
 router.post('/images', async (req, res) => {
     try {
