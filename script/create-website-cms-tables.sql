@@ -37,12 +37,15 @@ CREATE TABLE IF NOT EXISTS cms_upcoming_events (
 -- =============================================
 -- 3. MANDIR HOURS & AARTI TIMES
 -- =============================================
-CREATE TABLE IF NOT EXISTS cms_mandir_hours (
+-- Drop and recreate to ensure correct schema
+DROP TABLE IF EXISTS cms_mandir_hours;
+
+CREATE TABLE cms_mandir_hours (
     id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
     section_type VARCHAR(50) NOT NULL,  -- 'hours' or 'aarti'
     title VARCHAR(255),
     description TEXT,
-    timings JSONB DEFAULT '[]',  -- Array of {label, time, note}
+    timings JSONB DEFAULT '[]'::jsonb,  -- Array of {label, time, note}
     display_order INTEGER DEFAULT 0,
     is_active BOOLEAN DEFAULT true,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
@@ -71,3 +74,10 @@ GRANT SELECT ON cms_mandir_hours TO anon;
 CREATE INDEX IF NOT EXISTS idx_cms_sai_aangan_active ON cms_sai_aangan(is_active);
 CREATE INDEX IF NOT EXISTS idx_cms_upcoming_events_date ON cms_upcoming_events(event_date);
 CREATE INDEX IF NOT EXISTS idx_cms_mandir_hours_type ON cms_mandir_hours(section_type);
+
+-- =============================================
+-- ALTERNATIVE: If you don't want to drop the table, run this instead:
+-- =============================================
+-- ALTER TABLE cms_mandir_hours 
+-- ALTER COLUMN timings SET DEFAULT '[]'::jsonb,
+-- ALTER COLUMN timings TYPE JSONB USING COALESCE(timings, '[]'::jsonb);

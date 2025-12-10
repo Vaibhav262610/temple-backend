@@ -278,6 +278,194 @@ router.post('/images', async (req, res) => {
     }
 });
 
+// POST upload banner image with file
+router.post('/banner/upload', upload.single('image'), async (req, res) => {
+    try {
+        if (!req.file) {
+            return res.status(400).json({
+                success: false,
+                message: 'No image file provided'
+            });
+        }
+
+        const { title, description, slot } = req.body;
+        const bannerSlot = slot || 'banner-1'; // Default to banner-1
+
+        // Validate slot name
+        const validSlots = ['banner-1', 'banner-2', 'banner-3', 'banner-4'];
+        if (!validSlots.includes(bannerSlot)) {
+            return res.status(400).json({
+                success: false,
+                message: 'Invalid banner slot. Must be banner-1, banner-2, banner-3, or banner-4'
+            });
+        }
+
+        // Generate unique filename
+        const fileExt = path.extname(req.file.originalname);
+        const fileName = `banners/${bannerSlot}-${randomUUID()}${fileExt}`;
+
+        console.log('📤 Uploading banner image to Supabase Storage:', fileName);
+
+        // Upload to Supabase Storage
+        const { data: uploadData, error: uploadError } = await supabaseService.client.storage
+            .from('gallery-images')
+            .upload(fileName, req.file.buffer, {
+                contentType: req.file.mimetype,
+                upsert: false
+            });
+
+        if (uploadError) {
+            console.error('❌ Supabase upload error:', uploadError);
+            throw uploadError;
+        }
+
+        console.log('✅ Banner image uploaded to storage:', uploadData.path);
+
+        // Get public URL
+        const { data: { publicUrl } } = supabaseService.client.storage
+            .from('gallery-images')
+            .getPublicUrl(fileName);
+
+        console.log('🔗 Public URL:', publicUrl);
+
+        // Check if banner slot already exists
+        const { data: existingBanner, error: fetchError } = await supabaseService.client
+            .from('cms_images')
+            .select('*')
+            .eq('name', bannerSlot)
+            .single();
+
+        let dbData, dbError;
+
+        if (existingBanner) {
+            // Delete old image from storage if exists
+            if (existingBanner.storage_path) {
+                await supabaseService.client.storage
+                    .from('gallery-images')
+                    .remove([existingBanner.storage_path]);
+                console.log('🗑️ Deleted old banner image from storage');
+            }
+
+            // Update existing banner
+            const result = await supabaseService.client
+                .from('cms_images')
+                .update({
+                    image_url: publicUrl,
+                    title: title || existingBanner.title || `Banner ${bannerSlot.split('-')[1]}`,
+                    description: description || existingBanner.description || '',
+                    storage_path: fileName,
+                    is_active: true,
+                    updated_at: new Date().toISOString()
+                })
+                .eq('id', existingBanner.id)
+                .select()
+                .single();
+
+            dbData = result.data;
+            dbError = result.error;
+            console.log('✅ Banner updated in database');
+        } else {
+            // Create new banner
+            const result = await supabaseService.client
+                .from('cms_images')
+                .insert({
+                    name: bannerSlot,
+                    image_url: publicUrl,
+                    title: title || `Banner ${bannerSlot.split('-')[1]}`,
+                    description: description || '',
+                    storage_path: fileName,
+                    is_active: true
+                })
+                .select()
+                .single();
+
+            dbData = result.data;
+            dbError = result.error;
+            console.log('✅ Banner created in database');
+        }
+
+        if (dbError) {
+            console.error('❌ Database error:', dbError);
+            // Try to delete uploaded file if database operation fails
+            await supabaseService.client.storage.from('gallery-images').remove([fileName]);
+            throw dbError;
+        }
+
+        res.status(201).json({
+            success: true,
+            message: existingBanner ? 'Banner updated successfully' : 'Banner created successfully',
+            data: dbData
+        });
+
+    } catch (error) {
+        console.error('❌ Banner upload error:', error);
+        res.status(500).json({
+            success: false,
+            message: error.message || 'Failed to upload banner image',
+            error: process.env.NODE_ENV === 'development' ? error : undefined
+        });
+    }
+});
+
+// DELETE banner image
+router.delete('/banner/image/:slot', async (req, res) => {
+    try {
+        const { slot } = req.params;
+
+        // Get banner to find storage_path
+        const { data: banner, error: fetchError } = await supabaseService.client
+            .from('cms_images')
+            .select('*')
+            .eq('name', slot)
+            .single();
+
+        if (fetchError && fetchError.code !== 'PGRST116') throw fetchError;
+
+        if (!banner) {
+            return res.status(404).json({
+                success: false,
+                message: 'Banner not found'
+            });
+        }
+
+        // Delete from storage if storage_path exists
+        if (banner.storage_path) {
+            const { error: storageError } = await supabaseService.client.storage
+                .from('gallery-images')
+                .remove([banner.storage_path]);
+
+            if (storageError) {
+                console.warn('⚠️ Storage delete warning:', storageError);
+            } else {
+                console.log('✅ Deleted banner from storage');
+            }
+        }
+
+        // Delete from database
+        const { error: deleteError } = await supabaseService.client
+            .from('cms_images')
+            .delete()
+            .eq('id', banner.id);
+
+        if (deleteError) throw deleteError;
+
+        console.log('✅ Banner deleted from database');
+
+        res.json({
+            success: true,
+            message: 'Banner deleted successfully'
+        });
+
+    } catch (error) {
+        console.error('❌ Error deleting banner:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to delete banner',
+            error: error.message
+        });
+    }
+});
+
 // PUT update image
 router.put('/images/:id', async (req, res) => {
     try {
@@ -1077,25 +1265,44 @@ router.get('/mandir-hours', async (req, res) => {
 
 router.post('/mandir-hours', async (req, res) => {
     try {
+        console.log('📝 Creating mandir hours - Raw body:', JSON.stringify(req.body, null, 2));
+
         let timings = req.body.timings;
+        console.log('📝 Timings before parse - Type:', typeof timings, 'Value:', timings);
+
         if (typeof timings === 'string') {
-            try { timings = JSON.parse(timings); } catch { timings = []; }
+            try {
+                timings = JSON.parse(timings);
+                console.log('📝 Timings after parse:', JSON.stringify(timings));
+            } catch (e) {
+                console.error('❌ Failed to parse timings:', e);
+                timings = [];
+            }
         }
+
+        const insertData = {
+            section_type: req.body.section_type,
+            title: req.body.title || '',
+            description: req.body.description || '',
+            timings: timings || [],
+            display_order: parseInt(req.body.display_order) || 0,
+            is_active: req.body.is_active !== false
+        };
+
+        console.log('📝 Insert data:', JSON.stringify(insertData, null, 2));
 
         const { data, error } = await supabaseService.client
             .from('cms_mandir_hours')
-            .insert({
-                section_type: req.body.section_type,
-                title: req.body.title || '',
-                description: req.body.description || '',
-                timings: timings || [],
-                display_order: parseInt(req.body.display_order) || 0,
-                is_active: req.body.is_active !== false
-            })
+            .insert(insertData)
             .select('*')
             .single();
 
-        if (error) throw error;
+        if (error) {
+            console.error('❌ Supabase error:', error);
+            throw error;
+        }
+
+        console.log('✅ Mandir hours created:', JSON.stringify(data, null, 2));
         res.status(201).json({ success: true, data, message: 'Mandir hours created' });
     } catch (error) {
         console.error('Error creating mandir hours:', error);
@@ -1106,27 +1313,46 @@ router.post('/mandir-hours', async (req, res) => {
 router.put('/mandir-hours/:id', async (req, res) => {
     try {
         const { id } = req.params;
+        console.log('📝 Updating mandir hours ID:', id, '- Raw body:', JSON.stringify(req.body, null, 2));
+
         let timings = req.body.timings;
+        console.log('📝 Timings before parse - Type:', typeof timings, 'Value:', timings);
+
         if (typeof timings === 'string') {
-            try { timings = JSON.parse(timings); } catch { timings = []; }
+            try {
+                timings = JSON.parse(timings);
+                console.log('📝 Timings after parse:', JSON.stringify(timings));
+            } catch (e) {
+                console.error('❌ Failed to parse timings:', e);
+                timings = [];
+            }
         }
+
+        const updateData = {
+            section_type: req.body.section_type,
+            title: req.body.title || '',
+            description: req.body.description || '',
+            timings: timings || [],
+            display_order: parseInt(req.body.display_order) || 0,
+            is_active: req.body.is_active !== false,
+            updated_at: new Date().toISOString()
+        };
+
+        console.log('📝 Update data:', JSON.stringify(updateData, null, 2));
 
         const { data, error } = await supabaseService.client
             .from('cms_mandir_hours')
-            .update({
-                section_type: req.body.section_type,
-                title: req.body.title || '',
-                description: req.body.description || '',
-                timings: timings || [],
-                display_order: parseInt(req.body.display_order) || 0,
-                is_active: req.body.is_active !== false,
-                updated_at: new Date().toISOString()
-            })
+            .update(updateData)
             .eq('id', id)
             .select('*')
             .single();
 
-        if (error) throw error;
+        if (error) {
+            console.error('❌ Supabase error:', error);
+            throw error;
+        }
+
+        console.log('✅ Mandir hours updated:', JSON.stringify(data, null, 2));
         res.json({ success: true, data, message: 'Mandir hours updated' });
     } catch (error) {
         console.error('Error updating mandir hours:', error);
