@@ -166,14 +166,9 @@ app.use('/api/users', userRoutes); // Has its own auth for protected routes
 app.use('/api/public/events', publicEventsRoutes); // Public events for website
 
 // Public CMS endpoints (for main website to fetch banners, pujas, etc.)
-app.get('/api/cms/public/banner', (req, res, next) => cmsRoutes(req, res, next));
-app.get('/api/cms/public/banners', (req, res, next) => cmsRoutes(req, res, next));
-app.get('/api/cms/public/banner/:slot', (req, res, next) => cmsRoutes(req, res, next)); // Individual banner slots
-app.get('/api/cms/public/pujas', (req, res, next) => cmsRoutes(req, res, next));
-app.get('/api/cms/public/sai-aangan', (req, res, next) => cmsRoutes(req, res, next));
-app.get('/api/cms/public/upcoming-events', (req, res, next) => cmsRoutes(req, res, next));
-app.get('/api/cms/public/mandir-hours', (req, res, next) => cmsRoutes(req, res, next));
-app.post('/api/cms/contact', (req, res, next) => cmsRoutes(req, res, next)); // Contact form submission
+// These routes do NOT require authentication
+app.use('/api/cms/public', cmsRoutes); // All /public/* routes in cmsRoutes
+app.post('/api/cms/contact', cmsRoutes); // Contact form submission
 
 // =============================================
 // PROTECTED ROUTES (Authentication required)
@@ -196,7 +191,7 @@ app.use('/api/budgets', requireAuth, budgetsRoutes);
 app.use('/api/communications', requireAuth, communicationRoutes);
 app.use('/api/donations', requireAuth, donationsRoutes);
 app.use('/api/expenses', requireAuth, expensesRoutes);
-app.use('/api/cms', requireAuth, cmsRoutes);
+app.use('/api/cms', requireAuth, cmsRoutes); // Protected CMS routes (admin panel)
 app.use('/api/cms/gallery', requireAuth, galleryRoutes);
 app.use('/api/brochures', requireAuth, brochuresRoutes);
 app.use('/api/priests', requireAuth, priestsRoutes);

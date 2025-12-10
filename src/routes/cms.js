@@ -198,6 +198,175 @@ router.get('/images/:name', async (req, res) => {
     }
 });
 
+// =============================================
+// PUBLIC ENDPOINTS (mounted at /api/cms/public)
+// These routes work both with /public prefix (for /api/cms) and without (for /api/cms/public)
+// =============================================
+
+// PUBLIC ENDPOINT: Get active banner image for main website
+router.get('/banner', async (req, res) => {
+    try {
+        const { data, error } = await supabaseService.client
+            .from('cms_images')
+            .select('*')
+            .eq('name', 'banner')
+            .eq('is_active', true)
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .single();
+
+        if (error) {
+            if (error.code === 'PGRST116') {
+                return res.json({ success: true, data: null });
+            }
+            throw error;
+        }
+        res.json({ success: true, data });
+    } catch (error) {
+        console.error('Error fetching public banner:', error);
+        res.status(500).json({ success: false, message: error.message });
+    }
+});
+
+// PUBLIC ENDPOINT: Get ALL active banners for carousel
+router.get('/banners', async (req, res) => {
+    try {
+        console.log('📸 Fetching all active banners for carousel');
+
+        const { data, error } = await supabaseService.client
+            .from('cms_images')
+            .select('*')
+            .or('name.eq.banner-1,name.eq.banner-2,name.eq.banner-3,name.eq.banner-4')
+            .eq('is_active', true)
+            .order('name', { ascending: true });
+
+        if (error) throw error;
+
+        if (data) {
+            data.sort((a, b) => {
+                const aNum = parseInt(a.name.split('-')[1] || '0');
+                const bNum = parseInt(b.name.split('-')[1] || '0');
+                return aNum - bNum;
+            });
+        }
+
+        console.log(`✅ Found ${data?.length || 0} active banners`);
+        res.json({ success: true, data: data || [], count: data?.length || 0 });
+    } catch (error) {
+        console.error('❌ Error fetching public banners:', error);
+        res.status(500).json({ success: false, message: error.message });
+    }
+});
+
+// PUBLIC ENDPOINT: Get individual banner by slot
+router.get('/banner/:slot', async (req, res) => {
+    try {
+        const { slot } = req.params;
+        const validSlots = ['banner-1', 'banner-2', 'banner-3', 'banner-4'];
+
+        if (!validSlots.includes(slot)) {
+            return res.status(400).json({
+                success: false,
+                message: 'Invalid banner slot. Use banner-1, banner-2, banner-3, or banner-4'
+            });
+        }
+
+        console.log(`📸 Fetching ${slot}`);
+
+        const { data, error } = await supabaseService.client
+            .from('cms_images')
+            .select('*')
+            .eq('name', slot)
+            .eq('is_active', true)
+            .single();
+
+        if (error && error.code !== 'PGRST116') throw error;
+
+        if (!data) {
+            return res.json({ success: true, data: null, message: `No active banner found for ${slot}` });
+        }
+
+        console.log(`✅ Found ${slot}`);
+        res.json({ success: true, data });
+    } catch (error) {
+        console.error('❌ Error fetching banner:', error);
+        res.status(500).json({ success: false, message: error.message });
+    }
+});
+
+// PUBLIC ENDPOINT: Get active pujas
+router.get('/pujas', async (req, res) => {
+    try {
+        const { data, error } = await supabaseService.client
+            .from('cms_pujas')
+            .select('*')
+            .eq('is_active', true)
+            .order('display_order', { ascending: true });
+
+        if (error) throw error;
+        res.json({ success: true, data: data || [] });
+    } catch (error) {
+        console.error('Error fetching public pujas:', error);
+        res.status(500).json({ success: false, message: error.message });
+    }
+});
+
+// PUBLIC ENDPOINT: Get sai aangan
+router.get('/sai-aangan', async (req, res) => {
+    try {
+        const { data, error } = await supabaseService.client
+            .from('cms_sai_aangan')
+            .select('*')
+            .eq('is_active', true)
+            .order('display_order', { ascending: true });
+
+        if (error) throw error;
+        res.json({ success: true, data: data || [] });
+    } catch (error) {
+        console.error('Error fetching public sai aangan:', error);
+        res.status(500).json({ success: false, message: error.message });
+    }
+});
+
+// PUBLIC ENDPOINT: Get upcoming events
+router.get('/upcoming-events', async (req, res) => {
+    try {
+        const { data, error } = await supabaseService.client
+            .from('cms_upcoming_events')
+            .select('*')
+            .eq('is_active', true)
+            .gte('event_date', new Date().toISOString().split('T')[0])
+            .order('event_date', { ascending: true });
+
+        if (error) throw error;
+        res.json({ success: true, data: data || [] });
+    } catch (error) {
+        console.error('Error fetching public upcoming events:', error);
+        res.status(500).json({ success: false, message: error.message });
+    }
+});
+
+// PUBLIC ENDPOINT: Get mandir hours
+router.get('/mandir-hours', async (req, res) => {
+    try {
+        const { data, error } = await supabaseService.client
+            .from('cms_mandir_hours')
+            .select('*')
+            .eq('is_active', true)
+            .order('display_order', { ascending: true });
+
+        if (error) throw error;
+        res.json({ success: true, data: data || [] });
+    } catch (error) {
+        console.error('Error fetching public mandir hours:', error);
+        res.status(500).json({ success: false, message: error.message });
+    }
+});
+
+// =============================================
+// LEGACY PUBLIC ENDPOINTS (with /public prefix for backward compatibility)
+// =============================================
+
 // PUBLIC ENDPOINT: Get active banner image for main website
 router.get('/public/banner', async (req, res) => {
     try {
