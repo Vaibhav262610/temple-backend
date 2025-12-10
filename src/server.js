@@ -33,6 +33,7 @@ const cmsRoutes = require('./routes/cms');
 const galleryRoutes = require('./routes/gallery');
 const brochuresRoutes = require('./routes/brochures');
 const priestsRoutes = require('./routes/priests');
+const priestBookingsRoutes = require('./routes/priestBookings');
 
 // Import auth middleware
 const { requireAuth } = require('./middleware/authMiddleware');
@@ -195,6 +196,7 @@ app.use('/api/cms', requireAuth, cmsRoutes); // Protected CMS routes (admin pane
 app.use('/api/cms/gallery', requireAuth, galleryRoutes);
 app.use('/api/brochures', requireAuth, brochuresRoutes);
 app.use('/api/priests', requireAuth, priestsRoutes);
+app.use('/api/priest-bookings', requireAuth, priestBookingsRoutes);
 
 // Debug routes - only in development
 if (process.env.NODE_ENV !== 'production') {
