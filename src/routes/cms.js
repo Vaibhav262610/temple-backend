@@ -1601,4 +1601,104 @@ router.get('/public/mandir-hours', async (req, res) => {
     }
 });
 
+// =============================================
+// BAL VIDYA MANDIR ROUTES
+// =============================================
+
+// GET Bal Vidya content
+router.get('/bal-vidya', async (req, res) => {
+    try {
+        const { data, error } = await supabaseService.client
+            .from('cms_bal_vidya_mandir')
+            .select('*')
+            .eq('is_active', true)
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .single();
+
+        if (error && error.code !== 'PGRST116') throw error;
+        res.json({ success: true, data: data || null });
+    } catch (error) {
+        console.error('Error fetching Bal Vidya content:', error);
+        res.status(500).json({ success: false, message: error.message });
+    }
+});
+
+// POST create Bal Vidya content
+router.post('/bal-vidya', async (req, res) => {
+    try {
+        const { data, error } = await supabaseService.client
+            .from('cms_bal_vidya_mandir')
+            .insert(req.body)
+            .select('*')
+            .single();
+
+        if (error) throw error;
+        res.status(201).json({ success: true, data, message: 'Bal Vidya content created' });
+    } catch (error) {
+        console.error('Error creating Bal Vidya content:', error);
+        res.status(500).json({ success: false, message: error.message });
+    }
+});
+
+// PUT update Bal Vidya content
+router.put('/bal-vidya/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const updateData = {
+            ...req.body,
+            updated_at: new Date().toISOString()
+        };
+
+        const { data, error } = await supabaseService.client
+            .from('cms_bal_vidya_mandir')
+            .update(updateData)
+            .eq('id', id)
+            .select('*')
+            .single();
+
+        if (error) throw error;
+        res.json({ success: true, data, message: 'Bal Vidya content updated' });
+    } catch (error) {
+        console.error('Error updating Bal Vidya content:', error);
+        res.status(500).json({ success: false, message: error.message });
+    }
+});
+
+// DELETE Bal Vidya content
+router.delete('/bal-vidya/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { error } = await supabaseService.client
+            .from('cms_bal_vidya_mandir')
+            .delete()
+            .eq('id', id);
+
+        if (error) throw error;
+        res.json({ success: true, message: 'Bal Vidya content deleted' });
+    } catch (error) {
+        console.error('Error deleting Bal Vidya content:', error);
+        res.status(500).json({ success: false, message: error.message });
+    }
+});
+
+// PUBLIC ENDPOINT: Get Bal Vidya content for website
+router.get('/public/bal-vidya', async (req, res) => {
+    try {
+        const { data, error } = await supabaseService.client
+            .from('cms_bal_vidya_mandir')
+            .select('*')
+            .eq('is_active', true)
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .single();
+
+        if (error && error.code !== 'PGRST116') throw error;
+        res.json({ success: true, data: data || null });
+    } catch (error) {
+        console.error('Error fetching public Bal Vidya content:', error);
+        res.status(500).json({ success: false, message: error.message });
+    }
+});
+
 module.exports = router;
