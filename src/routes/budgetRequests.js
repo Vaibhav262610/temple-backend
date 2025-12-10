@@ -35,13 +35,37 @@ const upload = multer({
     }
 });
 
+// Helper function to ensure bucket exists
+async function ensureBucketExists(bucketName) {
+    try {
+        const { data: buckets } = await supabase.storage.listBuckets();
+        const bucketExists = buckets?.some(b => b.name === bucketName);
+
+        if (!bucketExists) {
+            console.log(`📦 Creating bucket: ${bucketName}`);
+            const { error } = await supabase.storage.createBucket(bucketName, {
+                public: true,
+                fileSizeLimit: 10485760 // 10MB
+            });
+            if (error && !error.message.includes('already exists')) {
+                console.error('❌ Failed to create bucket:', error);
+            }
+        }
+    } catch (err) {
+        console.error('❌ Error checking/creating bucket:', err.message);
+    }
+}
+
 // Helper function to upload file to Supabase Storage
 async function uploadToSupabase(file, communityId) {
     const fileExt = path.extname(file.originalname);
-    const fileName = `${communityId}/${randomUUID()}${fileExt}`;
+    const fileName = `budget-requests/${communityId}/${randomUUID()}${fileExt}`;
     const bucketName = 'budget-documents';
 
     console.log(`📤 Uploading file to Supabase: ${fileName}`);
+
+    // Ensure bucket exists
+    await ensureBucketExists(bucketName);
 
     const { data, error } = await supabase.storage
         .from(bucketName)
@@ -52,7 +76,34 @@ async function uploadToSupabase(file, communityId) {
 
     if (error) {
         console.error('❌ Supabase storage upload error:', error);
-        throw error;
+        // Try with gallery bucket as fallback
+        console.log('📤 Trying fallback bucket: gallery');
+        const fallbackFileName = `budget-request-docs/${communityId}/${randomUUID()}${fileExt}`;
+        const { data: fallbackData, error: fallbackError } = await supabase.storage
+            .from('gallery')
+            .upload(fallbackFileName, file.buffer, {
+                contentType: file.mimetype,
+                upsert: false
+            });
+
+        if (fallbackError) {
+            console.error('❌ Fallback upload also failed:', fallbackError);
+            throw error; // Throw original error
+        }
+
+        const { data: fallbackUrlData } = supabase.storage
+            .from('gallery')
+            .getPublicUrl(fallbackFileName);
+
+        console.log(`✅ File uploaded to fallback bucket: ${fallbackUrlData.publicUrl}`);
+
+        return {
+            name: file.originalname,
+            url: fallbackUrlData.publicUrl,
+            type: file.mimetype,
+            size: file.size,
+            path: fallbackFileName
+        };
     }
 
     // Get public URL

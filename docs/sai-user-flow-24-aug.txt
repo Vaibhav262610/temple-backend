@@ -1,0 +1,177 @@
+
+# DETAILED USER FLOWS — v2.3
+
+> Format per flow: **Preconditions → Steps (UI) → System/Backend → Notifications → Postconditions/Notes.**
+> Channels: **Push/WhatsApp**. Attendance: **present boolean**. Budgets: **Finance single-stage**.
+
+---
+
+## Super Admin
+
+**UF-SA-1 — Invite staff**
+Pre: logged in.
+Steps: Settings ▸ Users ▸ Invite → email + roles (+ optional community scope) → Send.
+System: create `users` (pending) + `user_roles`; audit.
+Notify: invite email via auth provider (outside messaging).
+Post: shows “Pending” until first login.
+
+**UF-SA-2 — Set defaults**
+Steps: Settings ▸ Finance (categories), Messaging (WA template keys, push rate).
+System: upsert `org_settings`; audit.
+
+---
+
+## Chairman / Board (read-only)
+
+**UF-CB-1 — View finance dashboard**
+Steps: Finance ▸ Dashboard → pick period/community → drill → export CSV.
+System: aggregates inflow by **source/provider**, outflow by category; RLS read.
+Post: downloads CSV.
+
+---
+
+## Finance
+
+**UF-FIN-1 — Decide budget (single stage)**
+Pre: budget `pending`.
+Steps: Finance ▸ Budgets → open → Approve/Reject (+ optional note).
+System: update `budgets.status`, `finance_note`, `decided_at`; audit; timeline entry.
+Notify: Owner via Push/WA.
+Post: appears in community report.
+
+**UF-FIN-2 — Record hundi/in-temple donation**
+Steps: Finance ▸ Donations ▸ New → source=**hundi**/**in\_temple**, amount, date, optional community/event, receipt photo → Save.
+System: insert `donations`; audit.
+Post: in reports.
+
+**UF-FIN-3 — Stripe webhook ingestion (auto)**
+Flow: Stripe → signed webhook → Edge Function → upsert `donations` with provider ids, **gross/fee/net/status/received\_at**; log `payment_events`.
+UI: Finance ▸ Reconciliation → filter provider/status/date → resolve exceptions → export.
+
+**UF-FIN-4 — Log expense**
+Steps: Finance ▸ Expenses ▸ New → vendor, amount, category, community/event, receipt → Save.
+System: insert `expenses`; audit.
+
+---
+
+## Communications
+
+**UF-COM-1 — Generate brochure (PPTX+PDF) & publish**
+Steps: Comms ▸ New Brochure → template → link Event or manual fields → Generate → Publish to Downloads → Copy link.
+System: store files (Supabase), insert `brochures`; audit.
+Notify: optional internal Push.
+
+---
+
+## Community Owner
+
+**UF-CO-1 — Manage members**
+Steps: Community ▸ Members → Add by email or select user → set role (lead/member) → Save; remove when needed.
+System: upsert `community_members`; audit.
+
+**UF-CO-2 — Create recurring **Event** (RRULE)**
+Steps: Community ▸ Calendar ▸ New Event → title, desc, location, start/end anchor → Recurrence = **RRULE** (preset/Custom) + timezone → Publish.
+System: insert `events (rrule, timezone)`; audit; timeline entry.
+UI: Calendar calls `/communities/:id/calendar?expand=1&from=&to=` to render instances.
+Notify: (optional) to members.
+
+**UF-CO-3 — Task list (simple)**
+Steps: Community ▸ Tasks → Add (title, assignee) → task appears **todo**; click to **done**; attach note/photo if needed.
+System: insert/update `event_tasks`; audit.
+Notify: assignee on create.
+
+**UF-CO-4 — Community **Kanban** (lightweight)**
+Steps: Community ▸ Kanban →
+
+* drag **Event** card Draft↔Published↔Cancelled → updates `events.status`;
+* drag **Task** card Todo↔Done → toggles `event_tasks.status`;
+* **Shifts** columns reflect time (read-only).
+  System: update row statuses; audit.
+
+**UF-CO-5 — Submit **Budget** (single stage)**
+Steps: Budgets ▸ New → event? (optional), amount, purpose, attachments → Submit.
+System: insert `budgets (pending)`; audit; timeline.
+Notify: Finance.
+
+\*\*UF-CO-6 — Community **Reports** & **Timeline**
+Steps: Reports → pick period → inflow/outflow/net; export CSV.
+Timeline → filtered feed (events/tasks/budgets/finance/media).
+System: read views/functions; RLS.
+
+---
+
+## Community Member
+
+**UF-CM-1 — Complete a task**
+Steps: My Tasks → open → toggle **todo → done** (+ optional note/photo).
+System: update `event_tasks.status`; audit; owner notified.
+
+---
+
+## Volunteer Coordinator
+
+**UF-VC-1 — Approve opt-ins**
+Steps: Volunteers ▸ Pending → open → Approve/Reject (+note); tag skills.
+System: update `volunteers.verified`; audit; notify user.
+
+**UF-VC-2 — Create shift & mark presence**
+Steps: Shifts ▸ New → link community/event, role, location, start/end, capacity → Save → assign volunteers or leave open.
+Day-of: Open shift → toggle **present** beside volunteer **or** volunteer taps “I’m here” in app.
+System: insert `shifts`; upsert `shift_attendance (present=true)`; audit.
+
+**UF-VC-3 — Broadcast to volunteers**
+Steps: Broadcasts → Audience (volunteer tags/community) → Channel: Push/WhatsApp → Compose → Send.
+System: insert `messages`; enqueue jobs; logs/retries.
+
+---
+
+## Priest
+
+**UF-PR-1 — Create **Puja** series (RRULE)**
+Steps: Pujas ▸ New → title, location, priest, **RRULE** + timezone → Publish.
+System: insert `puja_series`; audit.
+
+**UF-PR-2 — Add **Exception** to a puja date**
+Steps: Pujas ▸ Series → pick date → Exception → Cancel or Reschedule (new times) + note → Save.
+System: insert `puja_exceptions`; push to subscribers; update public site.
+
+---
+
+## Volunteer (mobile-first)
+
+**UF-VOL-1 — Opt-in**
+Steps: Volunteer → Opt-in form (skills/languages/availability) → Submit.
+System: upsert `volunteers (verified=false)`; notify coordinator.
+
+**UF-VOL-2 — Attend shift (presence)**
+Steps: Push → open shift → Accept (optional) → on arrival tap **I’m here**.
+System: upsert `shift_attendance (present=true, user_id)`; audit.
+
+---
+
+## Public/Devotee
+
+**UF-PUB-1 — View calendar & pujas**
+Steps: Public site → Events calendar (filter by community) → Event page → Add to Calendar (ICS).
+Pujas page → weekly/monthly recurrence with exception banners.
+System: read-only; expanded via RRULE function.
+
+**UF-PUB-2 — Volunteer opt-in**
+Steps: Volunteer page → opt-in form → goes to coordinator queue.
+System: insert `volunteers (verified=false)`.
+
+---
+
+## Cross-Cutting
+
+**UF-X-1 — Broadcast**
+Steps: Broadcasts → audience → channel (Push/WhatsApp) → compose → send.
+System: `messages` + workers; logs; retries; WA provider-ready.
+
+**UF-X-2 — Stripe donation → Finance**
+Flow: Checkout success → webhook upsert `donations` (gross/fee/net/provider ids) → Finance dashboards update by **source/provider**.
+
+**UF-X-3 — Community timeline aggregation**
+System: write entry on: event create/status change, task done, budget decision, donation/expense, brochure publish. Public page shows only public-safe items.
+
+---
